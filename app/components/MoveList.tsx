@@ -105,7 +105,9 @@ export function MoveList({
             {pair.black ? (
               <button
                 ref={currentMove === pair.black.index ? activeRef : null}
-                onClick={() => onSelectMove(pair.black.index)}
+                onClick={() => {
+                  if (pair.black) onSelectMove(pair.black.index);
+                }}
                 className={`text-left px-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700 ${
                   currentMove === pair.black.index
                     ? "bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200"

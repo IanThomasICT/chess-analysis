@@ -39,7 +39,7 @@ export function EvalGraph({ data, currentMove, onSelectMove }: EvalGraphProps) {
     <ResponsiveContainer width="100%" height="100%">
       <LineChart
         data={clampedData}
-        onClick={(e) => {
+        onClick={(e: any) => {
           if (e?.activePayload?.[0]) {
             onSelectMove(e.activePayload[0].payload.moveIndex);
           }
@@ -60,10 +60,10 @@ export function EvalGraph({ data, currentMove, onSelectMove }: EvalGraphProps) {
           width={30}
         />
         <Tooltip
-          formatter={(value: number) => [
-            value > 0 ? `+${value.toFixed(2)}` : value.toFixed(2),
-            "Eval",
-          ]}
+          formatter={(value: any) => {
+            const v = Number(value);
+            return [v > 0 ? `+${v.toFixed(2)}` : v.toFixed(2), "Eval"];
+          }}
           labelFormatter={(label) => `Move ${label}`}
           contentStyle={{
             backgroundColor: "#1f2937",
@@ -85,16 +85,20 @@ export function EvalGraph({ data, currentMove, onSelectMove }: EvalGraphProps) {
         />
 
         {/* Inflection points as larger dots */}
-        {inflections.map((inf) => (
-          <ReferenceDot
-            key={inf.moveIndex}
-            x={inf.moveIndex}
-            y={Math.max(-5, Math.min(5, inf.score))}
-            r={4}
-            fill={inf.score > data[inf.moveIndex - 1]?.score ? "#22c55e" : "#ef4444"}
-            stroke="none"
-          />
-        ))}
+        {inflections.map((inf) => {
+          const idx = data.findIndex((d) => d.moveIndex === inf.moveIndex);
+          const prevScore = idx > 0 ? data[idx - 1].score : 0;
+          return (
+            <ReferenceDot
+              key={inf.moveIndex}
+              x={inf.moveIndex}
+              y={Math.max(-5, Math.min(5, inf.score))}
+              r={4}
+              fill={inf.score > prevScore ? "#22c55e" : "#ef4444"}
+              stroke="none"
+            />
+          );
+        })}
 
         {/* Current move indicator */}
         {currentData && (

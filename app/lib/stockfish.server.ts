@@ -67,71 +67,79 @@ async function readUntilBestMove(
 }
 
 /**
- * Analyze a single position. Returns the evaluation result.
+ * Read from stdout until we see a specific string.
  */
-export async function analyzePosition(
-  fen: string,
-  proc: { stdin: WritableStream; stdout: ReadableStream },
-  writer: WritableStreamDefaultWriter,
+async function readUntil(
   reader: ReadableStreamDefaultReader<Uint8Array>,
-  depth = 20
-): Promise<AnalysisResult> {
-  const encode = (s: string) => new TextEncoder().encode(s + "\n");
-
-  await writer.write(encode(`position fen ${fen}`));
-  await writer.write(encode(`go depth ${depth}`));
-
-  return await readUntilBestMove(reader);
+  target: string
+): Promise<void> {
+  const decoder = new TextDecoder();
+  let buffer = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    if (buffer.includes(target)) break;
+  }
 }
 
-/**
- * Spawn a Stockfish process and return writer/reader handles.
- */
-export function spawnStockfish(): {
-  proc: ReturnType<typeof Bun.spawn>;
-  writer: WritableStreamDefaultWriter;
+interface StockfishHandle {
+  sendCmd: (cmd: string) => void;
   reader: ReadableStreamDefaultReader<Uint8Array>;
   init: () => Promise<void>;
   cleanup: () => void;
-} {
+}
+
+/**
+ * Spawn a Stockfish process and return control handles.
+ * Uses Bun.spawn with FileSink for stdin.
+ */
+export function spawnStockfish(): StockfishHandle {
   const proc = Bun.spawn([STOCKFISH_PATH], {
     stdin: "pipe",
     stdout: "pipe",
     stderr: "pipe",
   });
 
-  const writer = proc.stdin.getWriter();
-  const reader = proc.stdout.getReader();
+  const reader = (proc.stdout as ReadableStream<Uint8Array>).getReader();
 
-  const encode = (s: string) => new TextEncoder().encode(s + "\n");
+  const sendCmd = (cmd: string) => {
+    (proc.stdin as import("bun").FileSink).write(cmd + "\n");
+    (proc.stdin as import("bun").FileSink).flush();
+  };
 
   const init = async () => {
-    await writer.write(encode("uci"));
-    await writer.write(encode("setoption name Threads value 4"));
-    await writer.write(encode("setoption name Hash value 128"));
-    await writer.write(encode("isready"));
-
-    // Read until "readyok"
-    const decoder = new TextDecoder();
-    let buffer = "";
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      if (buffer.includes("readyok")) break;
-    }
+    sendCmd("uci");
+    sendCmd("setoption name Threads value 4");
+    sendCmd("setoption name Hash value 128");
+    sendCmd("isready");
+    await readUntil(reader, "readyok");
   };
 
   const cleanup = () => {
     try {
-      writer.close();
+      sendCmd("quit");
+      (proc.stdin as import("bun").FileSink).end();
     } catch {
       // ignore
     }
     proc.kill();
   };
 
-  return { proc, writer, reader, init, cleanup };
+  return { sendCmd, reader, init, cleanup };
+}
+
+/**
+ * Analyze a single position. Returns the evaluation result.
+ */
+async function analyzeSinglePosition(
+  fen: string,
+  sf: StockfishHandle,
+  depth = 20
+): Promise<AnalysisResult> {
+  sf.sendCmd(`position fen ${fen}`);
+  sf.sendCmd(`go depth ${depth}`);
+  return await readUntilBestMove(sf.reader);
 }
 
 /**
@@ -226,13 +234,7 @@ export async function* analyzeGame(
         continue;
       }
 
-      const result = await analyzePosition(
-        fens[i],
-        sf.proc as any,
-        sf.writer,
-        sf.reader,
-        depth
-      );
+      const result = await analyzeSinglePosition(fens[i], sf, depth);
 
       const moveSan = i > 0 ? (moves[i - 1] || null) : null;
 

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useLoaderData, Link } from "react-router";
 import type { Route } from "./+types/analysis.$gameId";
+import type { Key } from "@lichess-org/chessground/types";
 import { db } from "../lib/db.server";
 import { pgnToFens, pgnToMoves } from "../lib/pgn";
 import { getGameAnalysis, isGameAnalyzed } from "../lib/stockfish.server";
@@ -168,8 +169,8 @@ export default function AnalysisView() {
   const lastMove =
     currentMove > 0 && moves[currentMove - 1]
       ? ([moves[currentMove - 1].from, moves[currentMove - 1].to] as [
-          string,
-          string,
+          Key,
+          Key,
         ])
       : undefined;
 

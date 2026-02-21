@@ -2,10 +2,11 @@ import { useEffect, useRef } from "react";
 import { Chessground } from "@lichess-org/chessground";
 import type { Api } from "@lichess-org/chessground/api";
 import type { Config } from "@lichess-org/chessground/config";
+import type { Key } from "@lichess-org/chessground/types";
 
 interface ChessBoardProps {
   fen: string;
-  lastMove?: [string, string];
+  lastMove?: [Key, Key];
   config?: Partial<Config>;
 }
 
