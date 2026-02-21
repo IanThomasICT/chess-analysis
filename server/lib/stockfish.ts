@@ -21,6 +21,12 @@ function resolveStockfishPath(): string {
 
 const STOCKFISH_PATH: string = resolveStockfishPath();
 
+/** Max time per position in ms. Bounds total analysis time predictably. */
+const SEARCH_MOVETIME = 500;
+
+/** Minimum depth to accept from cache. Movetime search typically reaches 14-22. */
+const MIN_CACHE_DEPTH = 12;
+
 interface Score {
   cp: number | null;
   mate: number | null;
@@ -56,8 +62,13 @@ async function readUntilBestMove(
     for (const line of lines) {
       const trimmed = line.trim();
 
-      // Parse info lines for score
-      if (trimmed.startsWith("info") && trimmed.includes("score")) {
+      // Parse info lines for score (skip aspiration window bounds like Lichess does)
+      if (
+        trimmed.startsWith("info") &&
+        trimmed.includes("score") &&
+        !trimmed.includes("lowerbound") &&
+        !trimmed.includes("upperbound")
+      ) {
         const depthMatch = /\bdepth\s+(\d+)/.exec(trimmed);
         const cpMatch = /\bscore\s+cp\s+(-?\d+)/.exec(trimmed);
         const mateMatch = /\bscore\s+mate\s+(-?\d+)/.exec(trimmed);
@@ -116,7 +127,7 @@ export function spawnStockfish(): StockfishHandle {
   const proc = Bun.spawn([STOCKFISH_PATH], {
     stdin: "pipe",
     stdout: "pipe",
-    stderr: "pipe",
+    stderr: "ignore",
   });
 
   const stdin = proc.stdin;
@@ -130,8 +141,10 @@ export function spawnStockfish(): StockfishHandle {
 
   const init = async (): Promise<void> => {
     sendCmd("uci");
+    await readUntil(reader, "uciok");
     sendCmd("setoption name Threads value 4");
     sendCmd("setoption name Hash value 128");
+    sendCmd("ucinewgame");
     sendCmd("isready");
     await readUntil(reader, "readyok");
   };
@@ -155,11 +168,20 @@ export function spawnStockfish(): StockfishHandle {
 async function analyzeSinglePosition(
   fen: string,
   sf: StockfishHandle,
-  depth = 20
 ): Promise<AnalysisResult> {
   sf.sendCmd("position fen " + fen);
-  sf.sendCmd("go depth " + String(depth));
-  return await readUntilBestMove(sf.reader);
+  sf.sendCmd("go movetime " + String(SEARCH_MOVETIME));
+  const result = await readUntilBestMove(sf.reader);
+
+  // UCI scores are from the side-to-move's perspective.
+  // Normalize to White's perspective (like Lichess does).
+  const isBlackToMove = fen.split(" ")[1] === "b";
+  if (isBlackToMove) {
+    if (result.score.cp !== null) result.score.cp = -result.score.cp;
+    if (result.score.mate !== null) result.score.mate = -result.score.mate;
+  }
+
+  return result;
 }
 
 /**
@@ -170,7 +192,6 @@ export async function* analyzeGame(
   gameId: string,
   fens: string[],
   moves: string[],
-  depth = 20
 ): AsyncGenerator<{
   moveIndex: number;
   fen: string;
@@ -185,7 +206,7 @@ export async function* analyzeGame(
     .prepare(
       `SELECT COUNT(*) as count FROM analysis WHERE game_id = ? AND depth >= ?`
     )
-    .get(gameId, depth) as { count: number };
+    .get(gameId, MIN_CACHE_DEPTH) as { count: number };
 
   if (existingCount.count >= fens.length) {
     // Already fully analyzed, yield existing results
@@ -234,7 +255,7 @@ export async function* analyzeGame(
           `SELECT score_cp, score_mate, best_move, depth
            FROM analysis WHERE game_id = ? AND move_index = ? AND depth >= ?`
         )
-        .get(gameId, i, depth) as {
+        .get(gameId, i, MIN_CACHE_DEPTH) as {
         score_cp: number | null;
         score_mate: number | null;
         best_move: string;
@@ -254,7 +275,7 @@ export async function* analyzeGame(
         continue;
       }
 
-      const result = await analyzeSinglePosition(fens[i], sf, depth);
+      const result = await analyzeSinglePosition(fens[i], sf);
 
       const moveSan = i > 0 ? (moves[i - 1] ?? null) : null;
 
@@ -290,13 +311,12 @@ export async function* analyzeGame(
 export function isGameAnalyzed(
   gameId: string,
   totalPositions: number,
-  depth = 20
 ): boolean {
   const result = db
     .prepare(
       `SELECT COUNT(*) as count FROM analysis WHERE game_id = ? AND depth >= ?`
     )
-    .get(gameId, depth) as { count: number };
+    .get(gameId, MIN_CACHE_DEPTH) as { count: number };
   return result.count >= totalPositions;
 }
 

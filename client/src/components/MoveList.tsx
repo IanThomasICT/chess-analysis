@@ -1,64 +1,17 @@
-import { useEffect, useRef } from "react";
-
-interface AnalysisEntry {
-  move_index: number;
-  score_cp: number | null;
-  score_mate: number | null;
-}
+import { memo, useEffect, useRef } from "react";
 
 interface MoveListProps {
   moves: string[];
   currentMove: number;
   onSelectMove: (moveIndex: number) => void;
-  analysis: AnalysisEntry[];
+  moveClasses: string[];
 }
 
-/**
- * Classify a move by comparing the eval before and after.
- * Returns a CSS class for the move annotation.
- */
-function getMoveClass(
-  moveIndex: number,
-  analysis: AnalysisEntry[]
-): string {
-  if (analysis.length === 0) return "";
-
-  // moveIndex is 1-indexed into the game moves, but analysis is 0-indexed by position
-  // Position before this move = moveIndex, position after = moveIndex + 1
-  const before = analysis.find((a) => a.move_index === moveIndex);
-  const after = analysis.find((a) => a.move_index === moveIndex + 1);
-
-  if (!before || !after) return "";
-
-  const scoreBefore = before.score_mate !== null
-    ? before.score_mate > 0 ? 1000 : -1000
-    : (before.score_cp ?? 0);
-
-  const scoreAfter = after.score_mate !== null
-    ? after.score_mate > 0 ? 1000 : -1000
-    : (after.score_cp ?? 0);
-
-  // Determine if this was a white or black move
-  // moveIndex 0 = position before any move, moveIndex 1 = after white's 1st, etc.
-  const isWhiteMove = moveIndex % 2 === 0; // even position index = white just played
-
-  // Eval swing from the side-to-move's perspective
-  const swing = isWhiteMove
-    ? scoreAfter - scoreBefore // White moved: higher = better for white
-    : scoreBefore - scoreAfter; // Black moved: lower eval = better for black
-
-  if (swing < -300) return "text-red-500 font-bold"; // blunder
-  if (swing < -100) return "text-orange-500 font-semibold"; // mistake
-  if (swing < -50) return "text-yellow-500"; // inaccuracy
-
-  return "";
-}
-
-export function MoveList({
+export const MoveList = memo(function MoveList({
   moves,
   currentMove,
   onSelectMove,
-  analysis,
+  moveClasses,
 }: MoveListProps) {
   const activeRef = useRef<HTMLButtonElement>(null);
 
@@ -98,7 +51,7 @@ export function MoveList({
                 currentMove === pair.white.index
                   ? "bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200"
                   : "text-gray-900 dark:text-gray-100"
-              } ${getMoveClass(pair.white.index - 1, analysis)}`}
+              } ${moveClasses[pair.white.index - 1] ?? ""}`}
             >
               {pair.white.san}
             </button>
@@ -112,7 +65,7 @@ export function MoveList({
                   currentMove === pair.black.index
                     ? "bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200"
                     : "text-gray-900 dark:text-gray-100"
-                } ${getMoveClass(pair.black.index - 1, analysis)}`}
+                } ${moveClasses[pair.black.index - 1] ?? ""}`}
               >
                 {pair.black.san}
               </button>
@@ -124,4 +77,4 @@ export function MoveList({
       </div>
     </div>
   );
-}
+});

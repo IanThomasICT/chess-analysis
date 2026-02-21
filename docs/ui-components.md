@@ -2,7 +2,7 @@
 
 ## EvalBar
 
-File: `app/components/EvalBar.tsx`
+File: `client/src/components/EvalBar.tsx`
 
 A vertical evaluation bar with white on the bottom and black on top.
 
@@ -38,16 +38,16 @@ The label is positioned absolutely near the boundary between the white and black
 
 ## EvalGraph
 
-File: `app/components/EvalGraph.tsx`
+File: `client/src/components/EvalGraph.tsx`
 
-A Recharts `LineChart` showing the evaluation over the course of the game.
+A Recharts `LineChart` showing the evaluation over the course of the game. Wrapped in `React.memo` to skip re-renders when props are reference-equal.
 
 ### Props
 
 ```ts
 interface EvalGraphProps {
   data: EvalDataPoint[];                    // { moveIndex, score }
-  currentMove: number;                      // highlighted position
+  currentMove: number;                      // highlighted position (received via useDeferredValue)
   onSelectMove: (moveIndex: number) => void; // click handler
 }
 ```
@@ -59,6 +59,10 @@ interface EvalGraphProps {
 - **Inflection points**: Positions where `|score[i] - score[i-1]| > 0.5` pawns are rendered as colored dots (green = score improved for the moving side, red = worsened)
 - **Current move indicator**: A yellow dot with white border marks the active position
 - **Click navigation**: Clicking on the chart jumps to that move
+
+### Performance
+
+`clampedData` and `inflectionDots` are memoized via `useMemo([data])` -- they only recompute when the analysis data changes, not when `currentMove` changes. The parent passes `currentMove` through `useDeferredValue` so Recharts re-renders are deferred to idle frames, keeping board/eval bar/move list updates on the critical path.
 
 ### Type Safety
 
@@ -77,24 +81,26 @@ The handler is cast to `(data: unknown) => void` at the JSX boundary to satisfy 
 
 ## MoveList
 
-File: `app/components/MoveList.tsx`
+File: `client/src/components/MoveList.tsx`
 
-A scrollable grid of moves in standard notation, grouped into pairs (white move, black move).
+A scrollable grid of moves in standard notation, grouped into pairs (white move, black move). Wrapped in `React.memo`.
 
 ### Props
 
 ```ts
 interface MoveListProps {
-  moves: string[];              // SAN strings
+  moves: string[];              // SAN strings (stable reference via useMemo in parent)
   currentMove: number;          // active position index
   onSelectMove: (moveIndex: number) => void;
-  analysis: AnalysisEntry[];    // for coloring blunders/mistakes
+  moveClasses: string[];        // precomputed CSS classes per move (blunder/mistake/inaccuracy)
 }
 ```
 
 ### Move Classification
 
-`getMoveClass()` compares the evaluation before and after each move to classify it:
+Classifications are **precomputed in the parent** (`Analysis.tsx`) via `useMemo` with a `Map<move_index, entry>` for O(1) lookups, then passed as a simple `string[]`. MoveList indexes into this array (`moveClasses[positionIndex] ?? ""`). No per-render computation.
+
+The classification thresholds (applied in the parent):
 
 | Eval Swing (centipawns) | Classification | CSS |
 |---|---|---|
@@ -115,6 +121,6 @@ Moves are displayed in a 3-column grid: `[move number] [white move] [black move]
 
 ## GameCard
 
-File: `app/components/GameCard.tsx`
+File: `client/src/components/GameCard.tsx`
 
 See [gallery.md](gallery.md) for details.

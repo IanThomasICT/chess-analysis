@@ -27,4 +27,5 @@ console.log(`Server listening on http://localhost:${String(port)}`);
 export default {
   port,
   fetch: app.fetch,
+  idleTimeout: 120, // SSE analysis streams need long-lived connections
 };

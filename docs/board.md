@@ -2,7 +2,7 @@
 
 ## Chessground Integration
 
-File: `app/components/ChessBoard.tsx`
+File: `client/src/components/ChessBoard.tsx`
 
 The board is rendered by `@lichess-org/chessground` v10 (the scoped package, not the old `chessground` package). It is a view-only board with no move interaction.
 
@@ -20,12 +20,14 @@ interface ChessBoardProps {
 
 Chessground is initialized once via a `useEffect` with empty deps. Subsequent FEN/lastMove changes are applied via `api.current?.set(...)` without recreating the instance. The instance is destroyed on unmount.
 
+Position updates pass `animation: { enabled: false }` to `api.set()` for instant piece placement. The 200ms animation from initialization only applies to the first render. This prevents animation queueing during rapid keyboard navigation.
+
 Configuration locks down all interaction:
 
 - `movable.free: false` -- pieces cannot be moved
 - `draggable.enabled: false` -- no drag-and-drop
 - `selectable.enabled: false` -- no square selection
-- `animation.enabled: true, duration: 200` -- smooth piece transitions
+- `animation.enabled: true, duration: 200` -- smooth piece transitions (initial mount only)
 
 ### CSS
 
@@ -50,7 +52,7 @@ The `Key` type from `@lichess-org/chessground/types` is a string literal union o
 
 ## PGN Parsing
 
-File: `app/lib/pgn.ts`
+File: `server/lib/pgn.ts`
 
 Uses `chess.js` to convert PGN strings into usable data structures.
 

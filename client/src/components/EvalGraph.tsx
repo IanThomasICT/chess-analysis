@@ -1,3 +1,4 @@
+import { memo, useMemo } from "react";
 import {
   ResponsiveContainer,
   LineChart,
@@ -32,18 +33,32 @@ interface ChartClickEvent {
   activePayload?: ChartClickPayloadEntry[];
 }
 
-export function EvalGraph({ data, currentMove, onSelectMove }: EvalGraphProps) {
-  // Find inflection points: |score[i] - score[i-1]| > 0.5
-  const inflections = data.filter((d, i) => {
-    if (i === 0) return false;
-    return Math.abs(d.score - data[i - 1].score) > 0.5;
-  });
+export const EvalGraph = memo(function EvalGraph({
+  data,
+  currentMove,
+  onSelectMove,
+}: EvalGraphProps) {
+  // These only depend on data, not currentMove — memoize to skip recomputation.
+  const { clampedData, inflectionDots } = useMemo(() => {
+    const clamped: ClampedDataPoint[] = data.map((d) => ({
+      ...d,
+      clampedScore: Math.max(-5, Math.min(5, d.score)),
+    }));
 
-  // Clamp data for display
-  const clampedData: ClampedDataPoint[] = data.map((d) => ({
-    ...d,
-    clampedScore: Math.max(-5, Math.min(5, d.score)),
-  }));
+    const dots = data
+      .filter((d, i) => i > 0 && Math.abs(d.score - data[i - 1].score) > 0.5)
+      .map((inf) => {
+        const idx = data.findIndex((d) => d.moveIndex === inf.moveIndex);
+        const prevScore = idx > 0 ? data[idx - 1].score : 0;
+        return {
+          moveIndex: inf.moveIndex,
+          y: Math.max(-5, Math.min(5, inf.score)),
+          fill: inf.score > prevScore ? "#22c55e" : "#ef4444",
+        };
+      });
+
+    return { clampedData: clamped, inflectionDots: dots };
+  }, [data]);
 
   const currentData = clampedData.find((d) => d.moveIndex === currentMove);
 
@@ -102,21 +117,17 @@ export function EvalGraph({ data, currentMove, onSelectMove }: EvalGraphProps) {
           activeDot={{ r: 4, fill: "#3b82f6" }}
         />
 
-        {/* Inflection points as larger dots */}
-        {inflections.map((inf) => {
-          const idx = data.findIndex((d) => d.moveIndex === inf.moveIndex);
-          const prevScore = idx > 0 ? data[idx - 1].score : 0;
-          return (
-            <ReferenceDot
-              key={inf.moveIndex}
-              x={inf.moveIndex}
-              y={Math.max(-5, Math.min(5, inf.score))}
-              r={4}
-              fill={inf.score > prevScore ? "#22c55e" : "#ef4444"}
-              stroke="none"
-            />
-          );
-        })}
+        {/* Inflection points */}
+        {inflectionDots.map((dot) => (
+          <ReferenceDot
+            key={dot.moveIndex}
+            x={dot.moveIndex}
+            y={dot.y}
+            r={4}
+            fill={dot.fill}
+            stroke="none"
+          />
+        ))}
 
         {/* Current move indicator */}
         {currentData !== undefined && (
@@ -132,4 +143,4 @@ export function EvalGraph({ data, currentMove, onSelectMove }: EvalGraphProps) {
       </LineChart>
     </ResponsiveContainer>
   );
-}
+});

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useRef, useMemo, useDeferredValue } from "react";
 import { useParams, Link } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import type { Key } from "@lichess-org/chessground/types";
@@ -78,9 +78,11 @@ export function Analysis() {
     return () => { window.removeEventListener("keydown", handler); };
   }, [maxMove, fens.length]);
 
-  // Start analysis via SSE
-  const startAnalysis = useCallback(() => {
-    if (isAnalyzing || game === undefined) return;
+  // Auto-start analysis via SSE when game loads (if not already analyzed)
+  const analysisStarted = useRef(false);
+  useEffect(() => {
+    if (game === undefined || analyzed || analysisStarted.current) return;
+    analysisStarted.current = true;
     setIsAnalyzing(true);
     setProgress(0);
 
@@ -121,17 +123,78 @@ export function Analysis() {
       eventSource.close();
       setIsAnalyzing(false);
     };
-  }, [game, isAnalyzing]);
 
-  // Get current eval score (from White's perspective, in pawns)
-  const getCurrentScore = (): number => {
-    const entry = analysis.find((a) => a.move_index === currentMove);
-    if (entry === undefined) return 0;
-    if (entry.score_mate !== null) {
-      return entry.score_mate > 0 ? 10 : -10;
+    return () => {
+      eventSource.close();
+    };
+  }, [game, analyzed]);
+
+  // Pre-indexed scores: scores[moveIndex] → pawns. Built once when analysis changes.
+  const scores = useMemo(() => {
+    const arr: number[] = [];
+    for (const a of analysis) {
+      arr[a.move_index] =
+        a.score_mate !== null
+          ? a.score_mate > 0 ? 10 : -10
+          : (a.score_cp ?? 0) / 100;
     }
-    return (entry.score_cp ?? 0) / 100;
-  };
+    return arr;
+  }, [analysis]);
+
+  const currentScore = scores[currentMove] ?? 0;
+
+  // Build eval data for graph — only recomputes when analysis changes.
+  const evalData = useMemo(
+    () =>
+      [...analysis]
+        .sort((a, b) => a.move_index - b.move_index)
+        .map((a) => ({
+          moveIndex: a.move_index,
+          score:
+            a.score_mate !== null
+              ? a.score_mate > 0
+                ? 10
+                : -10
+              : (a.score_cp ?? 0) / 100,
+        })),
+    [analysis],
+  );
+
+  // Precompute move classifications once — O(n) with a Map, not O(n²) per render.
+  // moveClasses[i] is the CSS class for the move from position i to position i+1.
+  const moveClasses = useMemo(() => {
+    if (analysis.length === 0) return [];
+    const byIndex = new Map(analysis.map((a) => [a.move_index, a]));
+    const classes: string[] = [];
+    for (let i = 0; i < fens.length - 1; i++) {
+      const before = byIndex.get(i);
+      const after = byIndex.get(i + 1);
+      if (before === undefined || after === undefined) {
+        classes.push("");
+        continue;
+      }
+      const scoreBefore =
+        before.score_mate !== null
+          ? before.score_mate > 0 ? 1000 : -1000
+          : (before.score_cp ?? 0);
+      const scoreAfter =
+        after.score_mate !== null
+          ? after.score_mate > 0 ? 1000 : -1000
+          : (after.score_cp ?? 0);
+      const isWhiteMove = i % 2 === 0;
+      const swing = isWhiteMove
+        ? scoreAfter - scoreBefore
+        : scoreBefore - scoreAfter;
+      if (swing < -300) classes.push("text-red-500 font-bold");
+      else if (swing < -100) classes.push("text-orange-500 font-semibold");
+      else if (swing < -50) classes.push("text-yellow-500");
+      else classes.push("");
+    }
+    return classes;
+  }, [analysis, fens.length]);
+
+  // Stable SAN array so MoveList gets a consistent reference.
+  const moveSans = useMemo(() => moves.map((m) => m.san), [moves]);
 
   if (isPending) {
     return (
@@ -161,20 +224,9 @@ export function Analysis() {
       ? ([prevMove.from, prevMove.to] as [Key, Key])
       : undefined;
 
-  // Build eval data for graph
-  const evalData = analysis
-    .sort((a, b) => a.move_index - b.move_index)
-    .map((a) => ({
-      moveIndex: a.move_index,
-      score:
-        a.score_mate !== null
-          ? a.score_mate > 0
-            ? 10
-            : -10
-          : (a.score_cp ?? 0) / 100,
-    }));
+  // Defer graph indicator updates so Recharts doesn't block the critical path.
+  const deferredMove = useDeferredValue(currentMove);
 
-  const currentScore = getCurrentScore();
   const progressStr = String(Math.round(progress));
 
   return (
@@ -199,14 +251,6 @@ export function Analysis() {
               {game.timeClass}
             </span>
           </div>
-          {!analyzed && !isAnalyzing && (
-            <button
-              onClick={startAnalysis}
-              className="px-4 py-1.5 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700 transition-colors"
-            >
-              Analyze with Stockfish
-            </button>
-          )}
           {isAnalyzing && (
             <div className="flex items-center gap-2">
               <div className="w-32 h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
@@ -239,10 +283,10 @@ export function Analysis() {
           {/* Move List */}
           <div className="overflow-y-auto border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800">
             <MoveList
-              moves={moves.map((m) => m.san)}
+              moves={moveSans}
               currentMove={currentMove}
               onSelectMove={setCurrentMove}
-              analysis={analysis}
+              moveClasses={moveClasses}
             />
           </div>
         </div>
@@ -252,7 +296,7 @@ export function Analysis() {
           <div className="mt-4 h-40 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-2">
             <EvalGraph
               data={evalData}
-              currentMove={currentMove}
+              currentMove={deferredMove}
               onSelectMove={setCurrentMove}
             />
           </div>

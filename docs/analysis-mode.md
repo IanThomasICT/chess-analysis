@@ -4,13 +4,13 @@
 
 The analysis system has three layers:
 
-1. **Stockfish subprocess** (`app/lib/stockfish.server.ts`) -- UCI protocol over stdin/stdout
-2. **SSE streaming endpoint** (`app/routes/api.analyze.$gameId.ts`) -- streams results to the browser
-3. **Analysis UI** (`app/routes/analysis.$gameId.tsx`) -- renders board, eval bar, graph, move list
+1. **Stockfish subprocess** (`server/lib/stockfish.ts`) -- UCI protocol over stdin/stdout
+2. **SSE streaming endpoint** (`server/routes/analyze.ts`) -- streams results to the browser
+3. **Analysis UI** (`client/src/pages/Analysis.tsx`) -- renders board, eval bar, graph, move list
 
 ## Stockfish Service
 
-File: `app/lib/stockfish.server.ts`
+File: `server/lib/stockfish.ts`
 
 ### Process Lifecycle
 
@@ -27,13 +27,27 @@ interface StockfishHandle {
 
 - **stdin**: Bun's `FileSink`. Commands are written with `stdin.write()` + `stdin.flush()`.
 - **stdout**: `ReadableStream<Uint8Array>`. A reader is obtained via `.getReader()`.
+- **stderr**: Set to `"ignore"`. Never piped -- an unread stderr pipe can fill the OS buffer (~64KB) and deadlock the Stockfish process.
 
-Initialization sequence:
+Initialization sequence (matches Lichess's `protocol.ts` pattern):
 1. Send `uci`
-2. Send `setoption name Threads value 4`
-3. Send `setoption name Hash value 128`
-4. Send `isready`
-5. Block until `readyok` appears in stdout
+2. Wait for `uciok` (engine ready to accept options)
+3. Send `setoption name Threads value 4`
+4. Send `setoption name Hash value 128`
+5. Send `ucinewgame` (clears hash table for clean analysis)
+6. Send `isready`
+7. Block until `readyok` appears in stdout
+
+### Search Strategy
+
+Analysis uses time-bounded search (`go movetime 500`) instead of fixed depth. This caps each position at 500ms, giving predictable total analysis time (~30s for a 60-move game) while still reaching high depth on simple positions (typically depth 14-22).
+
+Two module-level constants control the search:
+
+```ts
+const SEARCH_MOVETIME = 500;   // ms per position
+const MIN_CACHE_DEPTH = 12;    // minimum depth to accept from cache
+```
 
 ### UCI Parsing
 
@@ -41,11 +55,13 @@ For each position, the engine sends:
 1. Multiple `info depth N score cp X` or `info depth N score mate X` lines
 2. A final `bestmove XXXX` line
 
-`readUntilBestMove()` buffers stdout, parses each line, and keeps the **last** `info` score before the `bestmove` line as the final evaluation.
+`readUntilBestMove()` buffers stdout, parses each line, and keeps the **last** `info` score before the `bestmove` line as the final evaluation. Lines containing `lowerbound` or `upperbound` (aspiration window intermediates) are skipped, matching Lichess's behavior.
 
-### Score Convention
+### Score Normalization
 
-All scores are stored from **White's perspective**:
+UCI reports scores from the **side-to-move's perspective**. `analyzeSinglePosition()` normalizes to **White's perspective** by checking the FEN's active color field and negating both `cp` and `mate` when Black is to move. This matches Lichess's `ply % 2` normalization in `protocol.ts`.
+
+All stored scores follow this convention:
 - Positive centipawns = White advantage
 - Negative centipawns = Black advantage
 - `score_mate > 0` = White has forced mate
@@ -53,25 +69,25 @@ All scores are stored from **White's perspective**:
 
 ### Caching
 
-Before analyzing, the service checks `COUNT(*)` in the analysis table for the given game and depth. If all positions are already analyzed at sufficient depth, cached results are yielded directly without spawning Stockfish.
+Before analyzing, the service checks `COUNT(*)` in the analysis table for the given game where `depth >= MIN_CACHE_DEPTH`. If all positions are already analyzed at sufficient depth, cached results are yielded directly without spawning Stockfish.
 
-Per-position caching: individual positions that already exist at the requested depth are skipped during analysis.
+Per-position caching: individual positions that already exist at `MIN_CACHE_DEPTH` are skipped during analysis.
 
 ### `analyzeGame()` Generator
 
 ```ts
-async function* analyzeGame(gameId, fens, moves, depth?)
+async function* analyzeGame(gameId, fens, moves)
 ```
 
 An async generator that yields one result per position. This design enables streaming: the SSE endpoint iterates the generator and sends each result to the client as it completes.
 
 ### Stockfish Path
 
-Resolved from `STOCKFISH_PATH` env var, falling back to `$HOME/.local/bin/stockfish`, then `/usr/local/bin/stockfish`.
+Resolved from `STOCKFISH_PATH` env var, falling back to `$HOME/bin/stockfish-bin`, `$HOME/.local/bin/stockfish`, then bare `"stockfish"` (relies on `$PATH`).
 
 ## SSE Streaming Endpoint
 
-File: `app/routes/api.analyze.$gameId.ts`
+File: `server/routes/analyze.ts`
 
 ### Protocol
 
@@ -85,7 +101,7 @@ The endpoint returns `Content-Type: text/event-stream`. Each SSE message is a JS
   "scoreCp": 20,
   "scoreMate": null,
   "bestMove": "e7e5",
-  "depth": 20,
+  "depth": 18,
   "total": 85
 }
 ```
@@ -100,30 +116,43 @@ The endpoint returns `Content-Type: text/event-stream`. Each SSE message is a JS
 { "error": "Stockfish process failed" }
 ```
 
+### Server Configuration
+
+The Bun server (`server/index.ts`) sets `idleTimeout: 120` to prevent the default 10-second idle timeout from killing long-running SSE connections during analysis.
+
 ### Client Consumption
 
-The analysis route creates an `EventSource` pointed at `/api/analyze/:gameId`. Each `onmessage` event is parsed as `AnalysisEvent` (a typed interface, not `any`) and used to build up the analysis state incrementally. The progress bar updates based on `moveIndex / total`.
+Analysis starts **automatically** when the game page loads and the game hasn't been analyzed yet. A `useEffect` with a ref guard opens an `EventSource` to `/api/analyze/:gameId` and streams results into component state. The progress bar updates based on `moveIndex / total`. The EventSource is cleaned up on unmount.
 
 ## Analysis View
 
-File: `app/routes/analysis.$gameId.tsx`
+File: `client/src/pages/Analysis.tsx`
 
-### Loader
+### Data Loading
 
-The loader is synchronous (no `async`). It:
-1. Fetches the game from SQLite
-2. Parses PGN into FENs and moves via `chess.js`
-3. Checks if analysis is already cached
-4. Returns game metadata, FENs, moves, and any cached analysis
+The page fetches game data via TanStack Query (`useQuery`). When the response arrives with `analyzed: false`, a `useEffect` automatically triggers SSE analysis (guarded by a `useRef` to prevent re-triggering after completion).
 
 ### Client State
 
 | State | Purpose |
 |---|---|
 | `currentMove` | Index into the FEN array (0 = start) |
-| `analysis` | Array of `AnalysisRow` (populated from loader or SSE) |
+| `analysis` | Array of `AnalysisRow` (populated from query or SSE) |
 | `isAnalyzing` | Whether SSE stream is active |
 | `progress` | Percentage complete (0-100) |
+
+### Precomputed Derived Data
+
+All expensive computations are memoized via `useMemo` and only recompute when `analysis` changes -- **not** on every arrow key press:
+
+| Memo | Depends on | Purpose |
+|---|---|---|
+| `scores` | `analysis` | Pre-indexed `number[]` by move index for O(1) eval lookup |
+| `evalData` | `analysis` | Sorted + mapped data points for the EvalGraph |
+| `moveClasses` | `analysis`, `fens.length` | Precomputed CSS classification strings (blunder/mistake/inaccuracy) via a `Map<move_index, entry>` for O(1) lookups |
+| `moveSans` | `moves` | Stable `string[]` reference for MoveList |
+
+`currentScore` is a plain array index (`scores[currentMove] ?? 0`), not a `.find()` scan.
 
 ### Keyboard Navigation
 
@@ -133,6 +162,8 @@ The loader is synchronous (no `async`). It:
 | ArrowLeft | Previous move |
 | Home | Go to start |
 | End | Go to final position |
+
+The EvalGraph receives `currentMove` via `useDeferredValue` so Recharts re-renders are deferred to idle frames, keeping board/eval bar/move list updates instant.
 
 ### Score Display
 

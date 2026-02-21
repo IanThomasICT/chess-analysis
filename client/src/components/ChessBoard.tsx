@@ -33,7 +33,7 @@ export function ChessBoard({ fen, lastMove, config }: ChessBoardProps) {
   }, []);
 
   useEffect(() => {
-    api.current?.set({ fen, lastMove });
+    api.current?.set({ fen, lastMove, animation: { enabled: false } });
   }, [fen, lastMove]);
 
   return <div ref={ref} className="w-full h-full aspect-square" />;
