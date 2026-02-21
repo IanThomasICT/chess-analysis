@@ -5,3 +5,7 @@
 # React Router
 /.react-router/
 /build/
+
+# SQLite
+analysis.db
+analysis.db-*

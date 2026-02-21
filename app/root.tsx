@@ -9,6 +9,9 @@ import {
 
 import type { Route } from "./+types/root";
 import "./app.css";
+import "@lichess-org/chessground/assets/chessground.base.css";
+import "@lichess-org/chessground/assets/chessground.brown.css";
+import "@lichess-org/chessground/assets/chessground.cburnett.css";
 
 export const links: Route.LinksFunction = () => [
   { rel: "preconnect", href: "https://fonts.googleapis.com" },
