@@ -1,18 +1,23 @@
 import { describe, test, expect } from "bun:test";
 import { setupPlaywright } from "./setup";
 
-const { getPage, baseUrl } = setupPlaywright();
+const { usePage, baseUrl } = setupPlaywright();
 
 describe("smoke tests", () => {
+  const { getPage } = usePage("/");
+
   test("page loads and shows title", async () => {
     const page = getPage();
-    await page.goto(baseUrl);
     await page.locator("h1").waitFor({ state: "visible" });
     expect(await page.locator("h1").textContent()).toBe("Chess Analyzer");
   });
 });
 
 describe("real data smoke tests", () => {
+  // Each test navigates to a different URL, so we start on the home page
+  // and navigate within each test body.
+  const { getPage } = usePage("/");
+
   test("loads games for kidkasu", async () => {
     const page = getPage();
     await page.goto(baseUrl + "/?username=kidkasu");

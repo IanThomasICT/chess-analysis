@@ -3,7 +3,7 @@ import { Database } from "bun:sqlite";
 const SCHOLARS_MATE_PGN = `[Event "Live Chess"]
 [Site "Chess.com"]
 [Date "2026.01.15"]
-[White "testplayer"]
+[White "e2e_fakeplayer"]
 [Black "opponent1"]
 [Result "1-0"]
 [TimeControl "180"]
@@ -14,7 +14,7 @@ const FOOLS_MATE_PGN = `[Event "Live Chess"]
 [Site "Chess.com"]
 [Date "2026.01.14"]
 [White "opponent2"]
-[Black "testplayer"]
+[Black "e2e_fakeplayer"]
 [Result "0-1"]
 [TimeControl "60"]
 
@@ -23,7 +23,7 @@ const FOOLS_MATE_PGN = `[Event "Live Chess"]
 const DRAW_PGN = `[Event "Live Chess"]
 [Site "Chess.com"]
 [Date "2026.01.13"]
-[White "testplayer"]
+[White "e2e_fakeplayer"]
 [Black "opponent3"]
 [Result "1/2-1/2"]
 [TimeControl "600"]
@@ -78,9 +78,9 @@ export function seedTestDatabase(dbPath = "analysis.db"): void {
 
   upsert.run(
     "e2e_game_1",
-    "testplayer",
+    "e2e_fakeplayer",
     SCHOLARS_MATE_PGN,
-    "testplayer",
+    "e2e_fakeplayer",
     "opponent1",
     "1-0",
     "blitz",
@@ -88,19 +88,19 @@ export function seedTestDatabase(dbPath = "analysis.db"): void {
   );
   upsert.run(
     "e2e_game_2",
-    "testplayer",
+    "e2e_fakeplayer",
     FOOLS_MATE_PGN,
     "opponent2",
-    "testplayer",
+    "e2e_fakeplayer",
     "0-1",
     "bullet",
     1736812800
   );
   upsert.run(
     "e2e_game_3",
-    "testplayer",
+    "e2e_fakeplayer",
     DRAW_PGN,
-    "testplayer",
+    "e2e_fakeplayer",
     "opponent3",
     "1/2-1/2",
     "rapid",
