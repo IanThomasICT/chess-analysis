@@ -2,10 +2,12 @@
 .env
 /node_modules/
 
-# React Router
-/.react-router/
+# Build output
 /build/
+*.tsbuildinfo
 
 # SQLite
 analysis.db
 analysis.db-*
+test_analysis.db
+test_analysis.db-*

@@ -1,101 +1,39 @@
-import { useState } from "react";
-import { useLoaderData, Form, useSearchParams, useNavigation } from "react-router";
-import type { Route } from "./+types/home";
-import { fetchRecentGames } from "../lib/chesscom.server";
-import { db } from "../lib/db.server";
+import { useState, useEffect } from "react";
+import { useSearchParams } from "react-router";
+import { useQuery } from "@tanstack/react-query";
+import { fetchGames } from "../api";
 import { GameCard } from "../components/GameCard";
 
-export function meta(_args: Route.MetaArgs) {
-  return [
-    { title: "Chess Analyzer" },
-    {
-      name: "description",
-      content: "Analyze your Chess.com games with Stockfish",
-    },
-  ];
-}
+export function Home() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const usernameParam = searchParams.get("username") ?? "";
 
-interface GameRow {
-  id: string;
-  username: string;
-  pgn: string;
-  white: string;
-  black: string;
-  result: string;
-  time_class: string;
-  end_time: number;
-}
+  const { data, isFetching } = useQuery({
+    queryKey: ["games", usernameParam],
+    queryFn: () => fetchGames(usernameParam),
+    enabled: usernameParam !== "",
+  });
 
-export async function loader({ request }: Route.LoaderArgs) {
-  const url = new URL(request.url);
-  const username = url.searchParams.get("username");
-
-  if (username === null || username === "") {
-    return { games: [] as GameRow[], username: null };
-  }
-
-  // Fetch recent games from Chess.com and upsert into DB
-  try {
-    const chessComGames = await fetchRecentGames(username, 3);
-
-    const upsert = db.prepare(`
-      INSERT OR REPLACE INTO games (id, username, pgn, white, black, result, time_class, end_time)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    const upsertMany = db.transaction((games: typeof chessComGames) => {
-      for (const g of games) {
-        // Use the game URL as a unique ID
-        const gameId = g.url.split("/").pop() ?? g.url;
-        const result =
-          g.white.result === "win"
-            ? "1-0"
-            : g.black.result === "win"
-            ? "0-1"
-            : "1/2-1/2";
-
-        upsert.run(
-          gameId,
-          username.toLowerCase(),
-          g.pgn,
-          g.white.username,
-          g.black.username,
-          result,
-          g.time_class,
-          g.end_time
-        );
-      }
-    });
-
-    upsertMany(chessComGames);
-  } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : "Unknown error";
-    console.error("Failed to fetch from Chess.com:", message);
-    // Fall through to load from DB cache
-  }
-
-  // Load from DB
-  const games = db
-    .prepare(
-      `SELECT id, username, pgn, white, black, result, time_class, end_time
-       FROM games
-       WHERE username = ?
-       ORDER BY end_time DESC`
-    )
-    .all(username.toLowerCase()) as GameRow[];
-
-  return { games, username };
-}
-
-export default function Home() {
-  const { games, username } = useLoaderData<typeof loader>();
-  const [searchParams] = useSearchParams();
-  const navigation = useNavigation();
-  const isLoading = navigation.state === "loading";
+  const games = data?.games ?? [];
+  const username = data?.username ?? null;
 
   const [filter, setFilter] = useState("");
   const [timeClassFilter, setTimeClassFilter] = useState("all");
   const [resultFilter, setResultFilter] = useState("all");
+
+  useEffect(() => {
+    document.title = "Chess Analyzer";
+  }, []);
+
+  const handleSubmit = (e: React.SyntheticEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const formData = new FormData(e.currentTarget);
+    const rawValue = formData.get("username");
+    const newUsername = typeof rawValue === "string" ? rawValue : "";
+    if (newUsername !== "") {
+      setSearchParams({ username: newUsername });
+    }
+  };
 
   const filteredGames = games.filter((g) => {
     // Text search (opponent name)
@@ -136,22 +74,22 @@ export default function Home() {
           <h1 className="text-xl font-bold text-gray-900 dark:text-white">
             Chess Analyzer
           </h1>
-          <Form method="get" className="flex gap-2">
+          <form onSubmit={handleSubmit} className="flex gap-2">
             <input
               type="text"
               name="username"
               placeholder="Chess.com username"
-              defaultValue={searchParams.get("username") ?? ""}
+              defaultValue={usernameParam}
               className="px-3 py-1.5 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
             <button
               type="submit"
               className="px-4 py-1.5 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700 disabled:opacity-50 transition-colors"
-              disabled={isLoading}
+              disabled={isFetching}
             >
-              {isLoading ? "Loading..." : "Load Games"}
+              {isFetching ? "Loading..." : "Load Games"}
             </button>
-          </Form>
+          </form>
         </div>
       </header>
 
@@ -209,7 +147,7 @@ export default function Home() {
           </>
         )}
 
-        {username !== null && games.length === 0 && !isLoading && (
+        {username !== null && games.length === 0 && !isFetching && (
           <div className="text-center py-20 text-gray-500 dark:text-gray-400">
             <p className="text-lg">No games found for &ldquo;{username}&rdquo;</p>
             <p className="text-sm mt-1">
@@ -218,7 +156,7 @@ export default function Home() {
           </div>
         )}
 
-        {username === null && (
+        {usernameParam === "" && (
           <div className="text-center py-20 text-gray-500 dark:text-gray-400">
             <p className="text-lg">Enter a Chess.com username to get started</p>
             <p className="text-sm mt-1">

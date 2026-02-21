@@ -1,10 +1,25 @@
-import { db } from "./db.server";
+import { db } from "./db";
 
-const STOCKFISH_PATH: string =
-  process.env.STOCKFISH_PATH ??
-  (process.env.HOME !== undefined
-    ? process.env.HOME + "/.local/bin/stockfish"
-    : "/usr/local/bin/stockfish");
+import { existsSync } from "node:fs";
+
+function resolveStockfishPath(): string {
+  if (process.env.STOCKFISH_PATH !== undefined) {
+    return process.env.STOCKFISH_PATH;
+  }
+  if (process.env.HOME !== undefined) {
+    const candidates = [
+      process.env.HOME + "/bin/stockfish-bin",
+      process.env.HOME + "/.local/bin/stockfish",
+    ];
+    for (const p of candidates) {
+      if (existsSync(p)) return p;
+    }
+  }
+  // Fall back to bare name — relies on $PATH (works in Docker with apt-installed stockfish)
+  return "stockfish";
+}
+
+const STOCKFISH_PATH: string = resolveStockfishPath();
 
 interface Score {
   cp: number | null;
@@ -105,7 +120,8 @@ export function spawnStockfish(): StockfishHandle {
   });
 
   const stdin = proc.stdin;
-  const reader = (proc.stdout as ReadableStream<Uint8Array>).getReader();
+  const stdout = proc.stdout as ReadableStream<Uint8Array>;
+  const reader = stdout.getReader() as ReadableStreamDefaultReader<Uint8Array>;
 
   const sendCmd = (cmd: string): void => {
     void stdin.write(cmd + "\n");

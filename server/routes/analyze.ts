@@ -1,22 +1,24 @@
-import type { Route } from "./+types/api.analyze.$gameId";
-import { db } from "../lib/db.server";
+import { Hono } from "hono";
+import { db } from "../lib/db";
 import { pgnToFens, pgnToMoves } from "../lib/pgn";
-import { analyzeGame } from "../lib/stockfish.server";
+import { analyzeGame } from "../lib/stockfish";
 
 interface GameRow {
   id: string;
   pgn: string;
 }
 
-export function loader({ params }: Route.LoaderArgs) {
-  const { gameId } = params;
+const analyze = new Hono();
+
+analyze.get("/analyze/:gameId", (c) => {
+  const gameId = c.req.param("gameId");
 
   const game = db
     .prepare("SELECT id, pgn FROM games WHERE id = ?")
     .get(gameId) as GameRow | null;
 
   if (game === null) {
-    return new Response("Game not found", { status: 404 });
+    return c.json({ error: "Game not found" }, 404);
   }
 
   const fens = pgnToFens(game.pgn);
@@ -66,4 +68,6 @@ export function loader({ params }: Route.LoaderArgs) {
       Connection: "keep-alive",
     },
   });
-}
+});
+
+export default analyze;

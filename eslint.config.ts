@@ -46,9 +46,9 @@ export default tseslint.config(
     // Ignore generated files and config files at the root
     ignores: [
       "build/**",
-      ".react-router/**",
       "node_modules/**",
       "*.config.ts",
+      "e2e/**",
     ],
   }
 );

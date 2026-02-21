@@ -1,25 +1,13 @@
 import { useState, useEffect, useCallback } from "react";
-import { useLoaderData, Link } from "react-router";
-import type { Route } from "./+types/analysis.$gameId";
-import { type Key } from "@lichess-org/chessground/types";
-import { db } from "../lib/db.server";
-import { pgnToFens, pgnToMoves } from "../lib/pgn";
-import { getGameAnalysis, isGameAnalyzed, type AnalysisRow } from "../lib/stockfish.server";
+import { useParams, Link } from "react-router";
+import { useQuery } from "@tanstack/react-query";
+import type { Key } from "@lichess-org/chessground/types";
+import { fetchGame } from "../api";
+import type { AnalysisRow } from "../api";
 import { ChessBoard } from "../components/ChessBoard";
 import { EvalBar } from "../components/EvalBar";
 import { EvalGraph } from "../components/EvalGraph";
 import { MoveList } from "../components/MoveList";
-
-interface GameRow {
-  id: string;
-  pgn: string;
-  white: string;
-  black: string;
-  result: string;
-  time_class: string;
-  end_time: number;
-  username: string;
-}
 
 /** Shape of SSE event data from the analysis endpoint */
 interface AnalysisEvent {
@@ -35,66 +23,43 @@ interface AnalysisEvent {
   total: number;
 }
 
-export function loader({ params }: Route.LoaderArgs) {
-  const { gameId } = params;
+export function Analysis() {
+  const { gameId } = useParams<{ gameId: string }>();
 
-  const game = db
-    .prepare("SELECT * FROM games WHERE id = ?")
-    .get(gameId) as GameRow | null;
-
-  if (game === null) {
-    throw new Error("Game not found");
-  }
-
-  const fens = pgnToFens(game.pgn);
-  const moves = pgnToMoves(game.pgn);
-  const analyzed = isGameAnalyzed(gameId, fens.length);
-
-  let analysis: AnalysisRow[] = [];
-  if (analyzed) {
-    analysis = getGameAnalysis(gameId);
-  }
-
-  return {
-    game: {
-      id: game.id,
-      white: game.white,
-      black: game.black,
-      result: game.result,
-      timeClass: game.time_class,
-      endTime: game.end_time,
-      username: game.username,
-    },
-    fens,
-    moves: moves.map((m) => ({
-      san: m.san,
-      from: m.from,
-      to: m.to,
-    })),
-    analysis,
-    analyzed,
-  };
-}
-
-export function meta({ loaderData }: Route.MetaArgs) {
-  return [
-    { title: loaderData.game.white + " vs " + loaderData.game.black + " - Chess Analyzer" },
-  ];
-}
-
-export default function AnalysisView() {
-  const { game, fens, moves, analysis: initialAnalysis, analyzed } =
-    useLoaderData<typeof loader>();
+  const { data, isPending, isError } = useQuery({
+    queryKey: ["game", gameId],
+    queryFn: () => fetchGame(gameId ?? ""),
+    enabled: gameId !== undefined && gameId !== "",
+  });
 
   const [currentMove, setCurrentMove] = useState(0);
-  const [analysis, setAnalysis] = useState(initialAnalysis);
+  const [analysis, setAnalysis] = useState<AnalysisRow[]>([]);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [progress, setProgress] = useState(0);
 
+  // Sync initial analysis when data loads
+  useEffect(() => {
+    if (data !== undefined) {
+      setAnalysis(data.analysis);
+    }
+  }, [data]);
+
+  const game = data?.game;
+  const fens = data?.fens ?? [];
+  const moves = data?.moves ?? [];
+  const analyzed = data?.analyzed ?? false;
   const maxMove = fens.length - 1;
+
+  // Set page title
+  useEffect(() => {
+    if (game !== undefined) {
+      document.title = game.white + " vs " + game.black + " - Chess Analyzer";
+    }
+  }, [game]);
 
   // Keyboard navigation
   useEffect(() => {
+    if (fens.length === 0) return;
     const handler = (e: KeyboardEvent) => {
       if (e.key === "ArrowRight") {
         setCurrentMove((m) => Math.min(m + 1, maxMove));
@@ -111,11 +76,11 @@ export default function AnalysisView() {
     };
     window.addEventListener("keydown", handler);
     return () => { window.removeEventListener("keydown", handler); };
-  }, [maxMove]);
+  }, [maxMove, fens.length]);
 
   // Start analysis via SSE
   const startAnalysis = useCallback(() => {
-    if (isAnalyzing) return;
+    if (isAnalyzing || game === undefined) return;
     setIsAnalyzing(true);
     setProgress(0);
 
@@ -123,40 +88,40 @@ export default function AnalysisView() {
     const eventSource = new EventSource("/api/analyze/" + game.id);
 
     eventSource.onmessage = (event: MessageEvent<string>) => {
-      const data = JSON.parse(event.data) as AnalysisEvent;
+      const eventData = JSON.parse(event.data) as AnalysisEvent;
 
-      if (data.done === true) {
+      if (eventData.done === true) {
         eventSource.close();
         setIsAnalyzing(false);
         return;
       }
 
-      if (data.error !== undefined) {
+      if (eventData.error !== undefined) {
         eventSource.close();
         setIsAnalyzing(false);
-        console.error("Analysis error:", data.error);
+        console.error("Analysis error:", eventData.error);
         return;
       }
 
       results.push({
-        move_index: data.moveIndex,
-        fen: data.fen,
-        move_san: data.moveSan ?? null,
-        score_cp: data.scoreCp,
-        score_mate: data.scoreMate,
-        best_move: data.bestMove,
-        depth: data.depth,
+        move_index: eventData.moveIndex,
+        fen: eventData.fen,
+        move_san: eventData.moveSan ?? null,
+        score_cp: eventData.scoreCp,
+        score_mate: eventData.scoreMate,
+        best_move: eventData.bestMove,
+        depth: eventData.depth,
       });
 
       setAnalysis([...results]);
-      setProgress(((data.moveIndex + 1) / data.total) * 100);
+      setProgress(((eventData.moveIndex + 1) / eventData.total) * 100);
     };
 
     eventSource.onerror = () => {
       eventSource.close();
       setIsAnalyzing(false);
     };
-  }, [game.id, isAnalyzing]);
+  }, [game, isAnalyzing]);
 
   // Get current eval score (from White's perspective, in pawns)
   const getCurrentScore = (): number => {
@@ -167,6 +132,27 @@ export default function AnalysisView() {
     }
     return (entry.score_cp ?? 0) / 100;
   };
+
+  if (isPending) {
+    return (
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-950 flex items-center justify-center">
+        <p className="text-gray-500 dark:text-gray-400">Loading game...</p>
+      </div>
+    );
+  }
+
+  if (isError || game === undefined) {
+    return (
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-950 flex items-center justify-center">
+        <div className="text-center">
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Game not found</h1>
+          <Link to="/" className="text-blue-600 hover:text-blue-700 mt-2 inline-block">
+            &larr; Back to home
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   // Last move highlight
   const prevMove = currentMove > 0 ? moves[currentMove - 1] : undefined;
