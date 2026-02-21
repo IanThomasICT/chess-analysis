@@ -1,8 +1,8 @@
 import { useEffect, useRef } from "react";
 import { Chessground } from "@lichess-org/chessground";
-import type { Api } from "@lichess-org/chessground/api";
-import type { Config } from "@lichess-org/chessground/config";
-import type { Key } from "@lichess-org/chessground/types";
+import { type Api } from "@lichess-org/chessground/api";
+import { type Config } from "@lichess-org/chessground/config";
+import { type Key } from "@lichess-org/chessground/types";
 
 interface ChessBoardProps {
   fen: string;
@@ -15,7 +15,7 @@ export function ChessBoard({ fen, lastMove, config }: ChessBoardProps) {
   const api = useRef<Api | null>(null);
 
   useEffect(() => {
-    if (!ref.current) return;
+    if (ref.current === null) return;
     api.current = Chessground(ref.current, {
       fen,
       lastMove,
@@ -29,8 +29,7 @@ export function ChessBoard({ fen, lastMove, config }: ChessBoardProps) {
       api.current?.destroy();
       api.current = null;
     };
-    // Only initialize once
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // Only initialize once — intentionally empty deps
   }, []);
 
   useEffect(() => {

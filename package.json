@@ -6,7 +6,8 @@
     "build": "react-router build",
     "dev": "react-router dev",
     "start": "react-router-serve ./build/server/index.js",
-    "typecheck": "react-router typegen && tsc"
+    "lint": "eslint app/",
+    "typecheck": "react-router typegen && tsc && eslint app/"
   },
   "dependencies": {
     "@lichess-org/chessground": "^10.0.2",
@@ -20,14 +21,17 @@
     "recharts": "^3.7.0"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@react-router/dev": "7.12.0",
     "@tailwindcss/vite": "^4.1.13",
     "@types/bun": "^1.3.9",
     "@types/node": "^22",
     "@types/react": "^19.2.7",
     "@types/react-dom": "^19.2.3",
+    "eslint": "^10.0.1",
     "tailwindcss": "^4.1.13",
     "typescript": "^5.9.2",
+    "typescript-eslint": "^8.56.0",
     "vite": "^7.1.7",
     "vite-tsconfig-paths": "^5.1.4"
   }

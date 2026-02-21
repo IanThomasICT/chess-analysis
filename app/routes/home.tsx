@@ -5,7 +5,7 @@ import { fetchRecentGames } from "../lib/chesscom.server";
 import { db } from "../lib/db.server";
 import { GameCard } from "../components/GameCard";
 
-export function meta({}: Route.MetaArgs) {
+export function meta(_args: Route.MetaArgs) {
   return [
     { title: "Chess Analyzer" },
     {
@@ -30,7 +30,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   const url = new URL(request.url);
   const username = url.searchParams.get("username");
 
-  if (!username) {
+  if (username === null || username === "") {
     return { games: [] as GameRow[], username: null };
   }
 
@@ -46,7 +46,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     const upsertMany = db.transaction((games: typeof chessComGames) => {
       for (const g of games) {
         // Use the game URL as a unique ID
-        const gameId = g.url.split("/").pop() || g.url;
+        const gameId = g.url.split("/").pop() ?? g.url;
         const result =
           g.white.result === "win"
             ? "1-0"
@@ -68,8 +68,9 @@ export async function loader({ request }: Route.LoaderArgs) {
     });
 
     upsertMany(chessComGames);
-  } catch (error) {
-    console.error("Failed to fetch from Chess.com:", error);
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "Unknown error";
+    console.error("Failed to fetch from Chess.com:", message);
     // Fall through to load from DB cache
   }
 
@@ -98,7 +99,7 @@ export default function Home() {
 
   const filteredGames = games.filter((g) => {
     // Text search (opponent name)
-    if (filter) {
+    if (filter !== "") {
       const search = filter.toLowerCase();
       const matchesWhite = g.white.toLowerCase().includes(search);
       const matchesBlack = g.black.toLowerCase().includes(search);
@@ -112,7 +113,7 @@ export default function Home() {
 
     // Result filter
     if (resultFilter !== "all") {
-      if (!username) return true;
+      if (username === null) return true;
       const isWhite = g.white.toLowerCase() === username.toLowerCase();
       const userWon =
         (isWhite && g.result === "1-0") || (!isWhite && g.result === "0-1");
@@ -155,7 +156,7 @@ export default function Home() {
       </header>
 
       <main className="max-w-7xl mx-auto px-6 py-6">
-        {username && games.length > 0 && (
+        {username !== null && games.length > 0 && (
           <>
             <div className="flex flex-wrap gap-3 mb-6">
               <input
@@ -187,7 +188,7 @@ export default function Home() {
                 <option value="draw">Draws</option>
               </select>
               <span className="self-center text-sm text-gray-500 dark:text-gray-400">
-                {filteredGames.length} game{filteredGames.length !== 1 && "s"}
+                {filteredGames.length} game{filteredGames.length !== 1 ? "s" : ""}
               </span>
             </div>
 
@@ -208,16 +209,16 @@ export default function Home() {
           </>
         )}
 
-        {username && games.length === 0 && !isLoading && (
+        {username !== null && games.length === 0 && !isLoading && (
           <div className="text-center py-20 text-gray-500 dark:text-gray-400">
-            <p className="text-lg">No games found for "{username}"</p>
+            <p className="text-lg">No games found for &ldquo;{username}&rdquo;</p>
             <p className="text-sm mt-1">
               Check the username and try again.
             </p>
           </div>
         )}
 
-        {!username && (
+        {username === null && (
           <div className="text-center py-20 text-gray-500 dark:text-gray-400">
             <p className="text-lg">Enter a Chess.com username to get started</p>
             <p className="text-sm mt-1">

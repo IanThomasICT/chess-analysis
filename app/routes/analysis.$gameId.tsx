@@ -1,10 +1,10 @@
 import { useState, useEffect, useCallback } from "react";
 import { useLoaderData, Link } from "react-router";
 import type { Route } from "./+types/analysis.$gameId";
-import type { Key } from "@lichess-org/chessground/types";
+import { type Key } from "@lichess-org/chessground/types";
 import { db } from "../lib/db.server";
 import { pgnToFens, pgnToMoves } from "../lib/pgn";
-import { getGameAnalysis, isGameAnalyzed } from "../lib/stockfish.server";
+import { getGameAnalysis, isGameAnalyzed, type AnalysisRow } from "../lib/stockfish.server";
 import { ChessBoard } from "../components/ChessBoard";
 import { EvalBar } from "../components/EvalBar";
 import { EvalGraph } from "../components/EvalGraph";
@@ -21,25 +21,29 @@ interface GameRow {
   username: string;
 }
 
-interface AnalysisRow {
-  move_index: number;
+/** Shape of SSE event data from the analysis endpoint */
+interface AnalysisEvent {
+  done?: boolean;
+  error?: string;
+  moveIndex: number;
   fen: string;
-  move_san: string | null;
-  score_cp: number | null;
-  score_mate: number | null;
-  best_move: string;
+  moveSan?: string;
+  scoreCp: number | null;
+  scoreMate: number | null;
+  bestMove: string;
   depth: number;
+  total: number;
 }
 
-export async function loader({ params }: Route.LoaderArgs) {
+export function loader({ params }: Route.LoaderArgs) {
   const { gameId } = params;
 
   const game = db
     .prepare("SELECT * FROM games WHERE id = ?")
     .get(gameId) as GameRow | null;
 
-  if (!game) {
-    throw new Response("Game not found", { status: 404 });
+  if (game === null) {
+    throw new Error("Game not found");
   }
 
   const fens = pgnToFens(game.pgn);
@@ -72,10 +76,9 @@ export async function loader({ params }: Route.LoaderArgs) {
   };
 }
 
-export function meta({ data }: Route.MetaArgs) {
-  if (!data) return [{ title: "Game Not Found" }];
+export function meta({ loaderData }: Route.MetaArgs) {
   return [
-    { title: `${data.game.white} vs ${data.game.black} - Chess Analyzer` },
+    { title: loaderData.game.white + " vs " + loaderData.game.black + " - Chess Analyzer" },
   ];
 }
 
@@ -107,7 +110,7 @@ export default function AnalysisView() {
       }
     };
     window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
+    return () => { window.removeEventListener("keydown", handler); };
   }, [maxMove]);
 
   // Start analysis via SSE
@@ -116,19 +119,19 @@ export default function AnalysisView() {
     setIsAnalyzing(true);
     setProgress(0);
 
-    const results: typeof analysis = [];
-    const eventSource = new EventSource(`/api/analyze/${game.id}`);
+    const results: AnalysisRow[] = [];
+    const eventSource = new EventSource("/api/analyze/" + game.id);
 
-    eventSource.onmessage = (event) => {
-      const data = JSON.parse(event.data);
+    eventSource.onmessage = (event: MessageEvent<string>) => {
+      const data = JSON.parse(event.data) as AnalysisEvent;
 
-      if (data.done) {
+      if (data.done === true) {
         eventSource.close();
         setIsAnalyzing(false);
         return;
       }
 
-      if (data.error) {
+      if (data.error !== undefined) {
         eventSource.close();
         setIsAnalyzing(false);
         console.error("Analysis error:", data.error);
@@ -138,7 +141,7 @@ export default function AnalysisView() {
       results.push({
         move_index: data.moveIndex,
         fen: data.fen,
-        move_san: data.moveSan || null,
+        move_san: data.moveSan ?? null,
         score_cp: data.scoreCp,
         score_mate: data.scoreMate,
         best_move: data.bestMove,
@@ -158,7 +161,7 @@ export default function AnalysisView() {
   // Get current eval score (from White's perspective, in pawns)
   const getCurrentScore = (): number => {
     const entry = analysis.find((a) => a.move_index === currentMove);
-    if (!entry) return 0;
+    if (entry === undefined) return 0;
     if (entry.score_mate !== null) {
       return entry.score_mate > 0 ? 10 : -10;
     }
@@ -166,12 +169,10 @@ export default function AnalysisView() {
   };
 
   // Last move highlight
+  const prevMove = currentMove > 0 ? moves[currentMove - 1] : undefined;
   const lastMove =
-    currentMove > 0 && moves[currentMove - 1]
-      ? ([moves[currentMove - 1].from, moves[currentMove - 1].to] as [
-          Key,
-          Key,
-        ])
+    prevMove !== undefined
+      ? ([prevMove.from, prevMove.to] as [Key, Key])
       : undefined;
 
   // Build eval data for graph
@@ -188,6 +189,7 @@ export default function AnalysisView() {
     }));
 
   const currentScore = getCurrentScore();
+  const progressStr = String(Math.round(progress));
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-950 flex flex-col">
@@ -224,11 +226,11 @@ export default function AnalysisView() {
               <div className="w-32 h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
                 <div
                   className="h-full bg-blue-600 transition-all duration-300"
-                  style={{ width: `${progress}%` }}
+                  style={{ width: `${progressStr}%` }}
                 />
               </div>
               <span className="text-sm text-gray-500 dark:text-gray-400">
-                {Math.round(progress)}%
+                {progressStr}%
               </span>
             </div>
           )}

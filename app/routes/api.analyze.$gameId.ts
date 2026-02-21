@@ -8,14 +8,14 @@ interface GameRow {
   pgn: string;
 }
 
-export async function loader({ params }: Route.LoaderArgs) {
+export function loader({ params }: Route.LoaderArgs) {
   const { gameId } = params;
 
   const game = db
     .prepare("SELECT id, pgn FROM games WHERE id = ?")
     .get(gameId) as GameRow | null;
 
-  if (!game) {
+  if (game === null) {
     return new Response("Game not found", { status: 404 });
   }
 
@@ -23,11 +23,12 @@ export async function loader({ params }: Route.LoaderArgs) {
   const moves = pgnToMoves(game.pgn).map((m) => m.san);
 
   const encoder = new TextEncoder();
+  const capturedGame = game;
 
   const stream = new ReadableStream({
     async start(controller) {
       try {
-        for await (const result of analyzeGame(game.id, fens, moves)) {
+        for await (const result of analyzeGame(capturedGame.id, fens, moves)) {
           const data = JSON.stringify({
             moveIndex: result.moveIndex,
             fen: result.fen,
@@ -37,19 +38,19 @@ export async function loader({ params }: Route.LoaderArgs) {
             depth: result.depth,
             total: result.total,
           });
-          controller.enqueue(encoder.encode(`data: ${data}\n\n`));
+          controller.enqueue(encoder.encode("data: " + data + "\n\n"));
         }
 
         // Signal completion
         controller.enqueue(
-          encoder.encode(`data: ${JSON.stringify({ done: true })}\n\n`)
+          encoder.encode("data: " + JSON.stringify({ done: true }) + "\n\n")
         );
-      } catch (error) {
+      } catch (error: unknown) {
         const message =
           error instanceof Error ? error.message : "Analysis failed";
         controller.enqueue(
           encoder.encode(
-            `data: ${JSON.stringify({ error: message })}\n\n`
+            "data: " + JSON.stringify({ error: message }) + "\n\n"
           )
         );
       } finally {

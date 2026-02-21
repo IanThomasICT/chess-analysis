@@ -1,7 +1,10 @@
 import { db } from "./db.server";
 
-const STOCKFISH_PATH =
-  process.env.STOCKFISH_PATH || `${process.env.HOME}/.local/bin/stockfish`;
+const STOCKFISH_PATH: string =
+  process.env.STOCKFISH_PATH ??
+  (process.env.HOME !== undefined
+    ? process.env.HOME + "/.local/bin/stockfish"
+    : "/usr/local/bin/stockfish");
 
 interface Score {
   cp: number | null;
@@ -27,29 +30,29 @@ async function readUntilBestMove(
   let lastDepth = 0;
   let bestMove = "";
 
-  while (true) {
+  for (;;) {
     const { done, value } = await reader.read();
     if (done) break;
 
     buffer += decoder.decode(value, { stream: true });
     const lines = buffer.split("\n");
-    buffer = lines.pop() || "";
+    buffer = lines.pop() ?? "";
 
     for (const line of lines) {
       const trimmed = line.trim();
 
       // Parse info lines for score
       if (trimmed.startsWith("info") && trimmed.includes("score")) {
-        const depthMatch = trimmed.match(/\bdepth\s+(\d+)/);
-        const cpMatch = trimmed.match(/\bscore\s+cp\s+(-?\d+)/);
-        const mateMatch = trimmed.match(/\bscore\s+mate\s+(-?\d+)/);
+        const depthMatch = /\bdepth\s+(\d+)/.exec(trimmed);
+        const cpMatch = /\bscore\s+cp\s+(-?\d+)/.exec(trimmed);
+        const mateMatch = /\bscore\s+mate\s+(-?\d+)/.exec(trimmed);
 
-        if (depthMatch) {
+        if (depthMatch !== null) {
           lastDepth = parseInt(depthMatch[1], 10);
         }
-        if (cpMatch) {
+        if (cpMatch !== null) {
           lastScore = { cp: parseInt(cpMatch[1], 10), mate: null };
-        } else if (mateMatch) {
+        } else if (mateMatch !== null) {
           lastScore = { cp: null, mate: parseInt(mateMatch[1], 10) };
         }
       }
@@ -57,7 +60,7 @@ async function readUntilBestMove(
       // Parse bestmove line
       if (trimmed.startsWith("bestmove")) {
         const parts = trimmed.split(/\s+/);
-        bestMove = parts[1] || "";
+        bestMove = parts[1] ?? "";
         return { score: lastScore, bestMove, depth: lastDepth };
       }
     }
@@ -75,7 +78,7 @@ async function readUntil(
 ): Promise<void> {
   const decoder = new TextDecoder();
   let buffer = "";
-  while (true) {
+  for (;;) {
     const { done, value } = await reader.read();
     if (done) break;
     buffer += decoder.decode(value, { stream: true });
@@ -101,14 +104,15 @@ export function spawnStockfish(): StockfishHandle {
     stderr: "pipe",
   });
 
+  const stdin = proc.stdin;
   const reader = (proc.stdout as ReadableStream<Uint8Array>).getReader();
 
-  const sendCmd = (cmd: string) => {
-    (proc.stdin as import("bun").FileSink).write(cmd + "\n");
-    (proc.stdin as import("bun").FileSink).flush();
+  const sendCmd = (cmd: string): void => {
+    void stdin.write(cmd + "\n");
+    void stdin.flush();
   };
 
-  const init = async () => {
+  const init = async (): Promise<void> => {
     sendCmd("uci");
     sendCmd("setoption name Threads value 4");
     sendCmd("setoption name Hash value 128");
@@ -116,12 +120,12 @@ export function spawnStockfish(): StockfishHandle {
     await readUntil(reader, "readyok");
   };
 
-  const cleanup = () => {
+  const cleanup = (): void => {
     try {
       sendCmd("quit");
-      (proc.stdin as import("bun").FileSink).end();
+      void stdin.end();
     } catch {
-      // ignore
+      // ignore — process may already be dead
     }
     proc.kill();
   };
@@ -137,8 +141,8 @@ async function analyzeSinglePosition(
   sf: StockfishHandle,
   depth = 20
 ): Promise<AnalysisResult> {
-  sf.sendCmd(`position fen ${fen}`);
-  sf.sendCmd(`go depth ${depth}`);
+  sf.sendCmd("position fen " + fen);
+  sf.sendCmd("go depth " + String(depth));
   return await readUntilBestMove(sf.reader);
 }
 
@@ -221,7 +225,7 @@ export async function* analyzeGame(
         depth: number;
       } | null;
 
-      if (existing) {
+      if (existing !== null) {
         yield {
           moveIndex: i,
           fen: fens[i],
@@ -236,7 +240,7 @@ export async function* analyzeGame(
 
       const result = await analyzeSinglePosition(fens[i], sf, depth);
 
-      const moveSan = i > 0 ? (moves[i - 1] || null) : null;
+      const moveSan = i > 0 ? (moves[i - 1] ?? null) : null;
 
       upsert.run(
         gameId,
@@ -283,19 +287,21 @@ export function isGameAnalyzed(
 /**
  * Get cached analysis for a game.
  */
-export function getGameAnalysis(gameId: string) {
+export function getGameAnalysis(gameId: string): AnalysisRow[] {
   return db
     .prepare(
       `SELECT move_index, fen, move_san, score_cp, score_mate, best_move, depth
        FROM analysis WHERE game_id = ? ORDER BY move_index`
     )
-    .all(gameId) as Array<{
-    move_index: number;
-    fen: string;
-    move_san: string | null;
-    score_cp: number | null;
-    score_mate: number | null;
-    best_move: string;
-    depth: number;
-  }>;
+    .all(gameId) as AnalysisRow[];
+}
+
+export interface AnalysisRow {
+  move_index: number;
+  fen: string;
+  move_san: string | null;
+  score_cp: number | null;
+  score_mate: number | null;
+  best_move: string;
+  depth: number;
 }

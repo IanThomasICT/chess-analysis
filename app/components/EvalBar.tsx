@@ -17,17 +17,22 @@ export function EvalBar({ score }: EvalBarProps) {
       ? `+${score.toFixed(1)}`
       : score.toFixed(1);
 
+  const blackHeight = String(100 - whiteHeight);
+  const whiteHeightStr = String(whiteHeight);
+  const topOffset = String(100 - whiteHeight + 2);
+  const bottomOffset = String(whiteHeight + 2);
+
   return (
     <div className="w-full h-full flex flex-col rounded overflow-hidden border border-gray-300 dark:border-gray-600 relative">
       {/* Black section (top) */}
       <div
         className="bg-gray-800 transition-all duration-300 ease-out"
-        style={{ height: `${100 - whiteHeight}%` }}
+        style={{ height: `${blackHeight}%` }}
       />
       {/* White section (bottom) */}
       <div
         className="bg-white transition-all duration-300 ease-out"
-        style={{ height: `${whiteHeight}%` }}
+        style={{ height: `${whiteHeightStr}%` }}
       />
       {/* Score label */}
       <div className="absolute inset-0 flex items-center justify-center">
@@ -36,8 +41,8 @@ export function EvalBar({ score }: EvalBarProps) {
             score >= 0 ? "text-gray-800" : "text-white"
           }`}
           style={{
-            top: score >= 0 ? `${100 - whiteHeight + 2}%` : undefined,
-            bottom: score < 0 ? `${whiteHeight + 2}%` : undefined,
+            top: score >= 0 ? `${topOffset}%` : undefined,
+            bottom: score < 0 ? `${bottomOffset}%` : undefined,
             position: "absolute",
           }}
         >

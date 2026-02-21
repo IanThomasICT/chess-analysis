@@ -14,10 +14,22 @@ interface EvalDataPoint {
   score: number;
 }
 
+interface ClampedDataPoint extends EvalDataPoint {
+  clampedScore: number;
+}
+
 interface EvalGraphProps {
   data: EvalDataPoint[];
   currentMove: number;
   onSelectMove: (moveIndex: number) => void;
+}
+
+interface ChartClickPayloadEntry {
+  payload: ClampedDataPoint;
+}
+
+interface ChartClickEvent {
+  activePayload?: ChartClickPayloadEntry[];
 }
 
 export function EvalGraph({ data, currentMove, onSelectMove }: EvalGraphProps) {
@@ -28,43 +40,49 @@ export function EvalGraph({ data, currentMove, onSelectMove }: EvalGraphProps) {
   });
 
   // Clamp data for display
-  const clampedData = data.map((d) => ({
+  const clampedData: ClampedDataPoint[] = data.map((d) => ({
     ...d,
     clampedScore: Math.max(-5, Math.min(5, d.score)),
   }));
 
   const currentData = clampedData.find((d) => d.moveIndex === currentMove);
 
+  const handleClick = (e: ChartClickEvent) => {
+    const payload = e.activePayload;
+    if (payload !== undefined && payload.length > 0) {
+      onSelectMove(payload[0].payload.moveIndex);
+    }
+  };
+
   return (
     <ResponsiveContainer width="100%" height="100%">
       <LineChart
         data={clampedData}
-        onClick={(e: any) => {
-          if (e?.activePayload?.[0]) {
-            onSelectMove(e.activePayload[0].payload.moveIndex);
-          }
-        }}
+        onClick={handleClick as (data: unknown) => void}
         margin={{ top: 5, right: 10, bottom: 5, left: 10 }}
       >
         <XAxis
           dataKey="moveIndex"
           tick={{ fontSize: 10 }}
-          tickFormatter={(v) => (v % 10 === 0 ? String(v) : "")}
+          tickFormatter={(v: number) => (v % 10 === 0 ? String(v) : "")}
           stroke="#666"
         />
         <YAxis
           domain={[-5, 5]}
           tick={{ fontSize: 10 }}
-          tickFormatter={(v) => (v > 0 ? `+${v}` : String(v))}
+          tickFormatter={(v: number) => (v > 0 ? "+" + String(v) : String(v))}
           stroke="#666"
           width={30}
         />
         <Tooltip
-          formatter={(value: any) => {
-            const v = Number(value);
-            return [v > 0 ? `+${v.toFixed(2)}` : v.toFixed(2), "Eval"];
+          formatter={(value: number | undefined) => {
+            const v = value ?? 0;
+            return [v > 0 ? "+" + v.toFixed(2) : v.toFixed(2), "Eval"];
           }}
-          labelFormatter={(label) => `Move ${label}`}
+          labelFormatter={(label: React.ReactNode) => {
+            const text = typeof label === "string" || typeof label === "number" ? String(label) : "";
+            return "Move " + text;
+          }}
           contentStyle={{
             backgroundColor: "#1f2937",
             border: "1px solid #374151",
@@ -101,7 +119,7 @@ export function EvalGraph({ data, currentMove, onSelectMove }: EvalGraphProps) {
         })}
 
         {/* Current move indicator */}
-        {currentData && (
+        {currentData !== undefined && (
           <ReferenceDot
             x={currentMove}
             y={currentData.clampedScore}
