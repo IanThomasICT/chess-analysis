@@ -9,7 +9,7 @@
 | UI | React 19, Tailwind CSS v4 |
 | Chess board | `@lichess-org/chessground` v10 |
 | Chess logic | `chess.js` v1 |
-| Charts | Recharts v3 |
+| Charts | uPlot v1 (canvas) |
 | Database | Bun's built-in SQLite (`bun:sqlite`) |
 | Engine | Stockfish (local subprocess via `Bun.spawn`) |
 | Linting | ESLint + `typescript-eslint` (strict + type-checked) |
@@ -95,7 +95,7 @@ app/
   components/
     ChessBoard.tsx         # Chessground wrapper
     EvalBar.tsx            # Vertical evaluation bar
-    EvalGraph.tsx          # Recharts eval line graph
+    EvalGraph.tsx          # uPlot canvas eval graph
     MoveList.tsx           # Scrollable move list with annotations
     GameCard.tsx           # Gallery card for a single game
   routes/

@@ -40,14 +40,14 @@ The label is positioned absolutely near the boundary between the white and black
 
 File: `client/src/components/EvalGraph.tsx`
 
-A Recharts `LineChart` showing the evaluation over the course of the game. Wrapped in `React.memo` to skip re-renders when props are reference-equal.
+A canvas-based eval chart using [uPlot](https://github.com/leeoniya/uPlot). Wrapped in `React.memo` to skip re-renders when props are reference-equal.
 
 ### Props
 
 ```ts
 interface EvalGraphProps {
   data: EvalDataPoint[];                    // { moveIndex, score }
-  currentMove: number;                      // highlighted position (received via useDeferredValue)
+  currentMove: number;                      // highlighted position
   onSelectMove: (moveIndex: number) => void; // click handler
 }
 ```
@@ -56,28 +56,36 @@ interface EvalGraphProps {
 
 - **Clamped display**: Scores are clamped to `[-5, 5]` for the Y axis
 - **Zero line**: A dashed reference line at y=0
-- **Inflection points**: Positions where `|score[i] - score[i-1]| > 0.5` pawns are rendered as colored dots (green = score improved for the moving side, red = worsened)
-- **Current move indicator**: A yellow dot with white border marks the active position
+- **Inflection points**: Positions where `|score[i] - score[i-1]| > 0.5` pawns are rendered as colored dots (green = score went up from White's perspective, red = went down)
+- **Current move indicator**: An amber dot with white border marks the active position
 - **Click navigation**: Clicking on the chart jumps to that move
+- **Tooltip**: Hover shows move number and eval score
+
+### Architecture (imperative canvas)
+
+uPlot is initialized in a `useEffect` with `[]` deps. The chart is **not** created inline — instead, a `ResizeObserver` watches the container and creates the chart on the first callback with non-zero dimensions. This avoids the 0×0 canvas problem when the container hasn't been laid out yet (common with conditional rendering + StrictMode double-mount). The latest data is read from `alignedDataRef` at creation time so it's never stale.
+
+All updates bypass React reconciliation:
+
+| Trigger | Update path |
+|---|---|
+| New analysis data (SSE) | `chart.setData(alignedData)` via `useEffect([alignedData])` |
+| `currentMove` change | `chart.redraw()` via `useEffect([currentMove])` — the `draw` hook reads `currentMoveRef` |
+| Container resize | `ResizeObserver` → `chart.setSize()` |
+
+Custom overlays are drawn in the `draw` hook directly on `self.ctx` (the canvas 2D context):
+1. Dashed zero reference line
+2. Inflection dots (read from `inflectionsRef`)
+3. Current-move indicator (read from `currentMoveRef`)
+
+Click-to-navigate uses a named event listener on `self.over` (the plot overlay div), with proper cleanup via `removeEventListener`.
 
 ### Performance
 
-`clampedData` and `inflectionDots` are memoized via `useMemo([data])` -- they only recompute when the analysis data changes, not when `currentMove` changes. The parent passes `currentMove` through `useDeferredValue` so Recharts re-renders are deferred to idle frames, keeping board/eval bar/move list updates on the critical path.
-
-### Type Safety
-
-The `onClick` handler uses a typed `ChartClickEvent` interface instead of `any`:
-
-```ts
-interface ChartClickPayloadEntry {
-  payload: ClampedDataPoint;
-}
-interface ChartClickEvent {
-  activePayload?: ChartClickPayloadEntry[];
-}
-```
-
-The handler is cast to `(data: unknown) => void` at the JSX boundary to satisfy Recharts' generic `onClick` type.
+- **No React reconciliation on move change**: `currentMove` triggers only `chart.redraw()` (~0.1ms canvas repaint), not a React component tree diff.
+- **No `useDeferredValue` needed**: The graph no longer blocks the critical path (board, eval bar, move list).
+- **Bundle size**: uPlot is ~35KB min vs ~200KB+ for Recharts (including D3 transitive deps).
+- `inflections` and `alignedData` are memoized via `useMemo([data])` — they only recompute when analysis data changes.
 
 ## MoveList
 

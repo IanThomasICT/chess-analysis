@@ -1,13 +1,17 @@
-import { useState, useEffect, useRef, useMemo, useDeferredValue } from "react";
+import { useState, useEffect, useRef, useMemo, startTransition } from "react";
 import { useParams, Link } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import type { Key } from "@lichess-org/chessground/types";
 import { fetchGame } from "../api";
-import type { AnalysisRow } from "../api";
+import type { AnalysisRow, GameMove } from "../api";
 import { ChessBoard } from "../components/ChessBoard";
 import { EvalBar } from "../components/EvalBar";
 import { EvalGraph } from "../components/EvalGraph";
 import { MoveList } from "../components/MoveList";
+
+// Stable empty arrays — avoids new references on every render when data is undefined.
+const EMPTY_FENS: string[] = [];
+const EMPTY_MOVES: GameMove[] = [];
 
 /** Shape of SSE event data from the analysis endpoint */
 interface AnalysisEvent {
@@ -45,8 +49,8 @@ export function Analysis() {
   }, [data]);
 
   const game = data?.game;
-  const fens = data?.fens ?? [];
-  const moves = data?.moves ?? [];
+  const fens = data?.fens ?? EMPTY_FENS;
+  const moves = data?.moves ?? EMPTY_MOVES;
   const analyzed = data?.analyzed ?? false;
   const maxMove = fens.length - 1;
 
@@ -79,10 +83,10 @@ export function Analysis() {
   }, [maxMove, fens.length]);
 
   // Auto-start analysis via SSE when game loads (if not already analyzed)
-  const analysisStarted = useRef(false);
+  const analysisStartedRef = useRef(false);
   useEffect(() => {
-    if (game === undefined || analyzed || analysisStarted.current) return;
-    analysisStarted.current = true;
+    if (game === undefined || analyzed || analysisStartedRef.current) return;
+    analysisStartedRef.current = true;
     setIsAnalyzing(true);
     setProgress(0);
 
@@ -115,7 +119,9 @@ export function Analysis() {
         depth: eventData.depth,
       });
 
-      setAnalysis([...results]);
+      startTransition(() => {
+        setAnalysis([...results]);
+      });
       setProgress(((eventData.moveIndex + 1) / eventData.total) * 100);
     };
 
@@ -196,6 +202,14 @@ export function Analysis() {
   // Stable SAN array so MoveList gets a consistent reference.
   const moveSans = useMemo(() => moves.map((m) => m.san), [moves]);
 
+  // Last move highlight — stable reference prevents spurious ChessBoard effects.
+  const lastMove = useMemo<[Key, Key] | undefined>(() => {
+    const prevMove = currentMove > 0 ? moves[currentMove - 1] : undefined;
+    return prevMove !== undefined
+      ? [prevMove.from, prevMove.to] as [Key, Key]
+      : undefined;
+  }, [currentMove, moves]);
+
   if (isPending) {
     return (
       <div className="min-h-screen bg-gray-50 dark:bg-gray-950 flex items-center justify-center">
@@ -216,16 +230,6 @@ export function Analysis() {
       </div>
     );
   }
-
-  // Last move highlight
-  const prevMove = currentMove > 0 ? moves[currentMove - 1] : undefined;
-  const lastMove =
-    prevMove !== undefined
-      ? ([prevMove.from, prevMove.to] as [Key, Key])
-      : undefined;
-
-  // Defer graph indicator updates so Recharts doesn't block the critical path.
-  const deferredMove = useDeferredValue(currentMove);
 
   const progressStr = String(Math.round(progress));
 
@@ -296,7 +300,7 @@ export function Analysis() {
           <div className="mt-4 h-40 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-2">
             <EvalGraph
               data={evalData}
-              currentMove={deferredMove}
+              currentMove={currentMove}
               onSelectMove={setCurrentMove}
             />
           </div>

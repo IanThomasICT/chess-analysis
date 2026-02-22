@@ -10,6 +10,7 @@
     "start": "NODE_ENV=production bun server/index.ts",
     "typecheck": "tsc -b && eslint client/src/ server/",
     "lint": "eslint client/src/ server/",
+    "validate": "tsc -b && eslint client/src/ server/ && vite build --config client/vite.config.ts",
     "test": "bun test tests/",
     "test:e2e": "bun e2e/seed.ts && bun test --timeout 30000 e2e/",
     "test:all": "bun test tests/ && bun e2e/seed.ts && bun test --timeout 30000 e2e/"
@@ -22,9 +23,10 @@
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "react-router": "7.12.0",
-    "recharts": "^3.7.0"
+    "uplot": "^1.6.32"
   },
   "devDependencies": {
+    "@eslint-react/eslint-plugin": "^2.13.0",
     "@eslint/js": "^10.0.1",
     "@tailwindcss/vite": "^4.1.13",
     "@types/bun": "^1.3.9",
@@ -33,6 +35,7 @@
     "@types/react-dom": "^19.2.3",
     "concurrently": "^9.2.1",
     "eslint": "^10.0.1",
+    "eslint-plugin-react-hooks": "^7.0.1",
     "playwright-core": "1.58.0",
     "tailwindcss": "^4.1.13",
     "typescript": "^5.9.2",

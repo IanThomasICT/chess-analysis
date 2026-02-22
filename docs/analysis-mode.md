@@ -163,7 +163,7 @@ All expensive computations are memoized via `useMemo` and only recompute when `a
 | Home | Go to start |
 | End | Go to final position |
 
-The EvalGraph receives `currentMove` via `useDeferredValue` so Recharts re-renders are deferred to idle frames, keeping board/eval bar/move list updates instant.
+The EvalGraph uses uPlot (canvas-based). When `currentMove` changes, only `chart.redraw()` is called — no React reconciliation. This keeps move navigation latency-free.
 
 ### Score Display
 

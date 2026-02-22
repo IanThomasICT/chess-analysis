@@ -1,5 +1,12 @@
 # Agent Rules
 
+## After Every Change
+
+After completing any set of code changes, always do both steps before considering work done:
+
+1. **Verify** — run `bun run validate` (typecheck + lint + build) and resolve every error. Do not move on with warnings-as-errors or build failures outstanding.
+2. **Update docs** — if the changes affect architecture, APIs, component contracts, linting rules, or conventions, update the relevant spec in `docs/` and keep `docs/README.md` in sync. If a discovery was made during the work (e.g. a new constraint, footgun, or pattern), document it in the appropriate spec or in `AGENTS.md` so the knowledge is not lost.
+
 ## Documentation
 
 Read `docs/README.md` first. It indexes all specs with related files so you can jump to the right doc efficiently.
@@ -11,9 +18,8 @@ bun run dev          # Start dev servers (Vite SPA + Hono API)
 bun run build        # Production build (Vite client)
 bun run typecheck    # tsc -b + eslint (run this before committing)
 bun run lint         # ESLint only
+bun run validate     # typecheck + lint + build (run after every change)
 ```
-
-Always run `bun run typecheck` before considering work done. It runs TypeScript project-references build followed by ESLint.
 
 ## Architecture
 
@@ -69,6 +75,54 @@ All server-only code lives in `server/`. Database access (`bun:sqlite`), Chess.c
 - The service uses `Bun.spawn` with `stdin: "pipe"` (returns `FileSink`, not `WritableStream`).
 - All scores are from White's perspective (positive = White advantage).
 
+## React Rules
+
+Two ESLint plugins enforce React correctness (`eslint.config.ts`):
+
+- **`eslint-plugin-react-hooks`** — `rules-of-hooks` (error) and `exhaustive-deps` (error)
+- **`@eslint-react/eslint-plugin`** — `recommended-type-checked` preset with leak detection and DOM safety rules upgraded to error
+
+### Hooks must be called above early returns
+
+All `useState`, `useMemo`, `useCallback`, `useEffect`, `useRef`, `useDeferredValue`, and any custom hooks must appear **before** any `if (...) return` guard. React requires hooks to execute in the same order on every render. `react-hooks/rules-of-hooks` enforces this at lint time.
+
+```tsx
+// WRONG — hook after conditional return
+if (isPending) return <Loading />;
+const lastMove = useMemo(() => ..., [dep]);
+
+// CORRECT — all hooks before any early return
+const lastMove = useMemo(() => ..., [dep]);
+if (isPending) return <Loading />;
+```
+
+### Exhaustive deps are enforced
+
+Every reactive value used inside `useEffect`, `useMemo`, or `useCallback` must appear in the dependency array. The only acceptable exception is one-time initialization of imperative DOM libraries (e.g. Chessground), which must include a justification:
+
+```ts
+// eslint-disable-next-line react-hooks/exhaustive-deps -- One-time init; updates go through api.set()
+}, []);
+```
+
+### Stable references for fallback values
+
+Do not use `data?.foo ?? []` inline — this creates a new array reference every render, which defeats `useMemo`/`React.memo` dependency checks. Use module-level constants:
+
+```tsx
+const EMPTY_ITEMS: Item[] = [];
+// inside component:
+const items = data?.items ?? EMPTY_ITEMS;
+```
+
+### Ref naming convention
+
+`useRef` identifiers must be named `ref` or end in `Ref` (e.g. `boardRef`, `apiRef`, `analysisStartedRef`).
+
+### Wrap components in React.memo when appropriate
+
+Components that receive stable props from memoized parents should be wrapped in `React.memo` to skip unnecessary re-renders. All current analysis sub-components (`ChessBoard`, `EvalBar`, `EvalGraph`, `MoveList`) are wrapped.
+
 ## Chessground
 
 - Use `@lichess-org/chessground` (v10 scoped package), not the old `chessground` package.
@@ -76,12 +130,14 @@ All server-only code lives in `server/`. Database access (`bun:sqlite`), Chess.c
 - The `Key` type comes from `@lichess-org/chessground/types`.
 - Board CSS is imported in `client/src/main.tsx` — do not import it elsewhere.
 
-## Recharts Type Workarounds
+## uPlot
 
-Recharts' generic types are loose. When working with `Tooltip` or chart event handlers:
-- `formatter` receives `number | undefined`, not `number`
-- `labelFormatter` receives `React.ReactNode`, not `string`
-- Chart `onClick` has no useful generic — define a local typed interface and cast at the boundary
+- The eval graph uses [uPlot](https://github.com/leeoniya/uPlot) — a lightweight (~35KB) canvas-based charting library.
+- uPlot is imperative: one-time init in `useEffect`, then `setData()` / `redraw()` for updates. No React reconciliation on the chart itself.
+- **Deferred init via ResizeObserver**: The chart is NOT created inline in the `useEffect`. Instead, a `ResizeObserver` watches the container and creates the chart on the first callback with non-zero dimensions. This avoids 0x0 canvas when the container hasn't been laid out yet (common with conditional rendering + StrictMode double-mount). The latest data is read from `alignedDataRef` at creation time so it's never stale.
+- Custom overlays (zero line, inflection dots, current-move indicator) are drawn via the `draw` hook directly on the canvas context.
+- Click-to-navigate uses an event listener on `self.over` (the plot overlay div).
+- CSS is imported in `client/src/main.tsx` (`uplot/dist/uPlot.min.css`).
 
 ## Move Indexing
 

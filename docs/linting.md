@@ -46,12 +46,34 @@ import { type Route } from "./+types/home";
 
 This is required because Rollup does not elide `import { type X }` statements during bundling, but does elide `import type { X }`. The React Router `+types` virtual modules only exist during type-checking and cannot be resolved at build time.
 
+### React Rules (client only)
+
+Scoped to `client/src/**/*.{ts,tsx}` via two plugins:
+
+**`eslint-plugin-react-hooks`** — the two non-negotiable hooks rules:
+
+| Rule | Level | Purpose |
+|---|---|---|
+| `rules-of-hooks` | error | Hooks must not be called conditionally, in loops, or after early returns |
+| `exhaustive-deps` | error | Every reactive value used inside a hook must appear in its dependency array |
+
+**`@eslint-react/eslint-plugin`** — `recommended-type-checked` preset plus overrides:
+
+| Category | Key rules (all error) |
+|---|---|
+| Leak detection | `no-leaked-event-listener`, `no-leaked-interval`, `no-leaked-timeout`, `no-leaked-resize-observer` |
+| DOM safety | `no-dangerously-set-innerhtml`, `no-script-url`, `no-unsafe-iframe-sandbox`, `no-void-elements-with-children` |
+| Component correctness | `no-nested-component-definitions`, `no-missing-key`, `no-leaked-conditional-rendering` |
+| Naming conventions | `ref-name` (refs must end in `Ref`), `use-state` (`[val, setVal]`), `context-name` |
+| React 19 deprecations | `no-forward-ref`, `no-context-provider`, `no-default-props` |
+| Disabled | `rsc/function-definition` (not using server components) |
+
 ### Ignored Paths
 
 - `build/**`
-- `.react-router/**`
 - `node_modules/**`
 - `*.config.ts` (root config files)
+- `e2e/**`
 
 ## TypeScript Configuration
 
@@ -87,17 +109,6 @@ bun run build
 void stdin.write(cmd + "\n");
 void stdin.flush();
 ```
-
-### Recharts type workarounds
-
-Recharts' `Tooltip` formatter expects `number | undefined`, and `labelFormatter` expects `React.ReactNode`. The typed wrappers handle these:
-
-```ts
-formatter={(value: number | undefined) => { ... }}
-labelFormatter={(label: React.ReactNode) => { ... }}
-```
-
-The chart `onClick` uses a local `ChartClickEvent` interface cast to `(data: unknown) => void`.
 
 ### SQLite result typing
 
