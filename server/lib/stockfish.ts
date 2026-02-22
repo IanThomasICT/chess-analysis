@@ -21,11 +21,11 @@ function resolveStockfishPath(): string {
 
 const STOCKFISH_PATH: string = resolveStockfishPath();
 
-/** Max time per position in ms. Bounds total analysis time predictably. */
-const SEARCH_MOVETIME = 500;
+/** Max time per position in ms. Higher values find shorter/more accurate mating lines. */
+const SEARCH_MOVETIME = 1500;
 
-/** Minimum depth to accept from cache. Movetime search typically reaches 14-22. */
-const MIN_CACHE_DEPTH = 12;
+/** Minimum depth to accept from cache. Movetime search at 1500ms typically reaches 20-30+. */
+const MIN_CACHE_DEPTH = 16;
 
 interface Score {
   cp: number | null;

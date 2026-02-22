@@ -40,13 +40,13 @@ Initialization sequence (matches Lichess's `protocol.ts` pattern):
 
 ### Search Strategy
 
-Analysis uses time-bounded search (`go movetime 500`) instead of fixed depth. This caps each position at 500ms, giving predictable total analysis time (~30s for a 60-move game) while still reaching high depth on simple positions (typically depth 14-22).
+Analysis uses time-bounded search (`go movetime 1500`) instead of fixed depth. This caps each position at 1.5s, giving reasonable total analysis time (~90s for a 60-move game) while reaching high depth (typically 20-30+). The higher search time produces more accurate forced-mate distances — at lower depths, Stockfish may find valid but non-optimal (longer) mating lines.
 
 Two module-level constants control the search:
 
 ```ts
-const SEARCH_MOVETIME = 500;   // ms per position
-const MIN_CACHE_DEPTH = 12;    // minimum depth to accept from cache
+const SEARCH_MOVETIME = 1500;  // ms per position
+const MIN_CACHE_DEPTH = 16;    // minimum depth to accept from cache
 ```
 
 ### UCI Parsing
