@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef } from "react";
+import { memo, useEffect, useMemo, useRef } from "react";
 
 interface MoveListProps {
   moves: string[];
@@ -16,25 +16,28 @@ export const MoveList = memo(function MoveList({
   const activeRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
-    activeRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    activeRef.current?.scrollIntoView({ block: "nearest", behavior: "instant" });
   }, [currentMove]);
 
-  // Group moves into pairs (white, black)
-  const movePairs: Array<{
-    number: number;
-    white: { san: string; index: number };
-    black?: { san: string; index: number };
-  }> = [];
+  // Group moves into pairs (white, black) — only recomputes when moves change.
+  const movePairs = useMemo(() => {
+    const pairs: Array<{
+      number: number;
+      white: { san: string; index: number };
+      black?: { san: string; index: number };
+    }> = [];
 
-  for (let i = 0; i < moves.length; i += 2) {
-    movePairs.push({
-      number: Math.floor(i / 2) + 1,
-      white: { san: moves[i], index: i + 1 },
-      black: moves[i + 1]
-        ? { san: moves[i + 1], index: i + 2 }
-        : undefined,
-    });
-  }
+    for (let i = 0; i < moves.length; i += 2) {
+      pairs.push({
+        number: Math.floor(i / 2) + 1,
+        white: { san: moves[i], index: i + 1 },
+        black: moves[i + 1]
+          ? { san: moves[i + 1], index: i + 2 }
+          : undefined,
+      });
+    }
+    return pairs;
+  }, [moves]);
 
   return (
     <div className="p-2 text-sm">

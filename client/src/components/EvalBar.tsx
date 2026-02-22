@@ -1,8 +1,10 @@
+import { memo } from "react";
+
 interface EvalBarProps {
   score: number; // in pawns, from White's perspective
 }
 
-export function EvalBar({ score }: EvalBarProps) {
+export const EvalBar = memo(function EvalBar({ score }: EvalBarProps) {
   // Clamp score to [-10, 10] pawns
   const clamped = Math.max(-10, Math.min(10, score));
   // Convert to percentage (white on bottom)
@@ -51,4 +53,4 @@ export function EvalBar({ score }: EvalBarProps) {
       </div>
     </div>
   );
-}
+});

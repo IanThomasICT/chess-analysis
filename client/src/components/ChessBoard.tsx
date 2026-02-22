@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { memo, useEffect, useRef } from "react";
 import { Chessground } from "@lichess-org/chessground";
 import type { Api } from "@lichess-org/chessground/api";
 import type { Config } from "@lichess-org/chessground/config";
@@ -10,13 +10,13 @@ interface ChessBoardProps {
   config?: Partial<Config>;
 }
 
-export function ChessBoard({ fen, lastMove, config }: ChessBoardProps) {
-  const ref = useRef<HTMLDivElement>(null);
-  const api = useRef<Api | null>(null);
+export const ChessBoard = memo(function ChessBoard({ fen, lastMove, config }: ChessBoardProps) {
+  const boardRef = useRef<HTMLDivElement>(null);
+  const apiRef = useRef<Api | null>(null);
 
   useEffect(() => {
-    if (ref.current === null) return;
-    api.current = Chessground(ref.current, {
+    if (boardRef.current === null) return;
+    apiRef.current = Chessground(boardRef.current, {
       fen,
       lastMove,
       movable: { free: false },
@@ -26,15 +26,15 @@ export function ChessBoard({ fen, lastMove, config }: ChessBoardProps) {
       ...config,
     });
     return () => {
-      api.current?.destroy();
-      api.current = null;
+      apiRef.current?.destroy();
+      apiRef.current = null;
     };
-    // Only initialize once — intentionally empty deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- One-time init; updates go through api.set() in the next effect.
   }, []);
 
   useEffect(() => {
-    api.current?.set({ fen, lastMove, animation: { enabled: false } });
+    apiRef.current?.set({ fen, lastMove, animation: { enabled: false } });
   }, [fen, lastMove]);
 
-  return <div ref={ref} className="w-full h-full aspect-square" />;
-}
+  return <div ref={boardRef} className="w-full h-full aspect-square" />;
+});
