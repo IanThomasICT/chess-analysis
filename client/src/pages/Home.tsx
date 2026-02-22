@@ -4,6 +4,8 @@ import { useQuery } from "@tanstack/react-query";
 import { fetchGames } from "../api";
 import { GameCard } from "../components/GameCard";
 
+const USERNAME_STORAGE_KEY = "chess-analyzer-username";
+
 export function Home() {
   const [searchParams, setSearchParams] = useSearchParams();
   const usernameParam = searchParams.get("username") ?? "";
@@ -24,6 +26,17 @@ export function Home() {
   useEffect(() => {
     document.title = "Chess Analyzer";
   }, []);
+
+  useEffect(() => {
+    if (usernameParam === "") {
+      const cached = localStorage.getItem(USERNAME_STORAGE_KEY);
+      if (cached !== null && cached !== "") {
+        setSearchParams({ username: cached }, { replace: true });
+      }
+    } else {
+      localStorage.setItem(USERNAME_STORAGE_KEY, usernameParam);
+    }
+  }, [usernameParam, setSearchParams]);
 
   const handleSubmit = (e: React.SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -76,6 +89,7 @@ export function Home() {
           </h1>
           <form onSubmit={handleSubmit} className="flex gap-2">
             <input
+              key={usernameParam}
               type="text"
               name="username"
               placeholder="Chess.com username"
