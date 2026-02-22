@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useMemo, startTransition } from "react";
 import { useParams, Link } from "react-router";
 import { useQuery } from "@tanstack/react-query";
+import type { DrawShape } from "@lichess-org/chessground/draw";
 import type { Key } from "@lichess-org/chessground/types";
 import { fetchGame } from "../api";
 import type { AnalysisRow, GameMove } from "../api";
@@ -12,6 +13,7 @@ import { MoveList } from "../components/MoveList";
 // Stable empty arrays — avoids new references on every render when data is undefined.
 const EMPTY_FENS: string[] = [];
 const EMPTY_MOVES: GameMove[] = [];
+const EMPTY_SHAPES: DrawShape[] = [];
 
 /** Shape of SSE event data from the analysis endpoint */
 interface AnalysisEvent {
@@ -156,8 +158,25 @@ export function Analysis() {
     return arr;
   }, [analysis]);
 
+  // Pre-indexed best moves: bestMoves[moveIndex] → UCI string (e.g. "e2e4").
+  // Typed as (string | undefined)[] because the array is sparse (not every index has a value).
+  const bestMoves = useMemo(() => {
+    const arr: (string | undefined)[] = [];
+    for (const a of analysis) {
+      arr[a.move_index] = a.best_move;
+    }
+    return arr;
+  }, [analysis]);
+
   const currentScore = scores[currentMove] ?? 0;
   const currentMate = scoreMates[currentMove] ?? null;
+
+  // Arrow shape for Stockfish's recommended best move from the current position.
+  const bestMoveShapes = useMemo((): DrawShape[] => {
+    const bm = bestMoves[currentMove];
+    if (bm === undefined || bm.length < 4) return EMPTY_SHAPES;
+    return [{ orig: bm.slice(0, 2) as Key, dest: bm.slice(2, 4) as Key, brush: "blue" }];
+  }, [bestMoves, currentMove]);
 
   // Build eval data for graph — only recomputes when analysis changes.
   const evalData = useMemo(
@@ -291,7 +310,7 @@ export function Analysis() {
 
           {/* Chessground Board */}
           <div className="aspect-square max-h-full mx-auto">
-            <ChessBoard fen={fens[currentMove]} lastMove={lastMove} />
+            <ChessBoard fen={fens[currentMove]} lastMove={lastMove} autoShapes={bestMoveShapes} />
           </div>
 
           {/* Move List */}

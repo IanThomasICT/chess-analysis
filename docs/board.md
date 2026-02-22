@@ -12,15 +12,20 @@ The board is rendered by `@lichess-org/chessground` v10 (the scoped package, not
 interface ChessBoardProps {
   fen: string;               // FEN string to display
   lastMove?: [Key, Key];     // [from, to] squares to highlight
+  autoShapes?: DrawShape[];  // Arrows/circles drawn on the board (e.g. best move arrow)
   config?: Partial<Config>;  // Additional chessground config overrides
 }
 ```
 
 ### Initialization
 
-Chessground is initialized once via a `useEffect` with empty deps. Subsequent FEN/lastMove changes are applied via `api.current?.set(...)` without recreating the instance. The instance is destroyed on unmount.
+Chessground is initialized once via a `useEffect` with empty deps. Subsequent FEN/lastMove/autoShapes changes are applied via `api.current?.set(...)` without recreating the instance. The instance is destroyed on unmount.
 
 Position updates pass `animation: { enabled: false }` to `api.set()` for instant piece placement. The 200ms animation from initialization only applies to the first render. This prevents animation queueing during rapid keyboard navigation.
+
+### Best Move Arrow
+
+The Analysis page passes a blue arrow shape via `autoShapes` to show Stockfish's recommended best move from the current position. The UCI best move string (e.g. `"e2e4"`) is split into `orig`/`dest` squares and rendered as a `DrawShape` with the built-in `"blue"` brush. The arrow updates reactively as the user navigates moves.
 
 Configuration locks down all interaction:
 

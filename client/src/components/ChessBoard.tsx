@@ -2,15 +2,19 @@ import { memo, useEffect, useRef } from "react";
 import { Chessground } from "@lichess-org/chessground";
 import type { Api } from "@lichess-org/chessground/api";
 import type { Config } from "@lichess-org/chessground/config";
+import type { DrawShape } from "@lichess-org/chessground/draw";
 import type { Key } from "@lichess-org/chessground/types";
+
+const EMPTY_SHAPES: DrawShape[] = [];
 
 interface ChessBoardProps {
   fen: string;
   lastMove?: [Key, Key];
+  autoShapes?: DrawShape[];
   config?: Partial<Config>;
 }
 
-export const ChessBoard = memo(function ChessBoard({ fen, lastMove, config }: ChessBoardProps) {
+export const ChessBoard = memo(function ChessBoard({ fen, lastMove, autoShapes, config }: ChessBoardProps) {
   const boardRef = useRef<HTMLDivElement>(null);
   const apiRef = useRef<Api | null>(null);
 
@@ -33,8 +37,13 @@ export const ChessBoard = memo(function ChessBoard({ fen, lastMove, config }: Ch
   }, []);
 
   useEffect(() => {
-    apiRef.current?.set({ fen, lastMove, animation: { enabled: false } });
-  }, [fen, lastMove]);
+    apiRef.current?.set({
+      fen,
+      lastMove,
+      animation: { enabled: false },
+      drawable: { autoShapes: autoShapes ?? EMPTY_SHAPES },
+    });
+  }, [fen, lastMove, autoShapes]);
 
   return <div ref={boardRef} className="w-full h-full aspect-square" />;
 });
