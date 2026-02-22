@@ -147,7 +147,17 @@ export function Analysis() {
     return arr;
   }, [analysis]);
 
+  // Pre-indexed mate distances: scoreMates[moveIndex] → mate count or null.
+  const scoreMates = useMemo(() => {
+    const arr: (number | null)[] = [];
+    for (const a of analysis) {
+      arr[a.move_index] = a.score_mate;
+    }
+    return arr;
+  }, [analysis]);
+
   const currentScore = scores[currentMove] ?? 0;
+  const currentMate = scoreMates[currentMove] ?? null;
 
   // Build eval data for graph — only recomputes when analysis changes.
   const evalData = useMemo(
@@ -276,7 +286,7 @@ export function Analysis() {
         <div className="grid grid-cols-[auto_1fr_280px] gap-4 h-[min(calc(100vh-200px),600px)]">
           {/* Eval Bar */}
           <div className="w-8">
-            <EvalBar score={currentScore} />
+            <EvalBar score={currentScore} scoreMate={currentMate} />
           </div>
 
           {/* Chessground Board */}

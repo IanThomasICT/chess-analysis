@@ -2,22 +2,22 @@ import { memo } from "react";
 
 interface EvalBarProps {
   score: number; // in pawns, from White's perspective
+  scoreMate: number | null; // mate distance (positive = White mates), null when no forced mate
 }
 
-export const EvalBar = memo(function EvalBar({ score }: EvalBarProps) {
+export const EvalBar = memo(function EvalBar({ score, scoreMate }: EvalBarProps) {
   // Clamp score to [-10, 10] pawns
   const clamped = Math.max(-10, Math.min(10, score));
   // Convert to percentage (white on bottom)
   const whiteHeight = ((clamped + 10) / 20) * 100;
 
-  const displayScore =
-    Math.abs(score) >= 10
-      ? score > 0
-        ? "M"
-        : "-M"
-      : score > 0
-      ? `+${score.toFixed(1)}`
-      : score.toFixed(1);
+  let displayScore: string;
+  if (scoreMate !== null) {
+    const absDistance = Math.abs(scoreMate);
+    displayScore = scoreMate > 0 ? `M${String(absDistance)}` : `-M${String(absDistance)}`;
+  } else {
+    displayScore = score > 0 ? `+${score.toFixed(1)}` : score.toFixed(1);
+  }
 
   const blackHeight = String(100 - whiteHeight);
   const whiteHeightStr = String(whiteHeight);

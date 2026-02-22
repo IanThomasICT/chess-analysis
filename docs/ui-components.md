@@ -10,7 +10,8 @@ A vertical evaluation bar with white on the bottom and black on top.
 
 ```ts
 interface EvalBarProps {
-  score: number;  // in pawns, from White's perspective
+  score: number;           // in pawns, from White's perspective
+  scoreMate: number | null; // mate distance (positive = White mates), null when no forced mate
 }
 ```
 
@@ -30,7 +31,8 @@ whiteHeight = ((clampedScore + 10) / 20) * 100
 
 | Condition | Display |
 |---|---|
-| `abs(score) >= 10` | `"M"` or `"-M"` (mate) |
+| `scoreMate !== null` (positive) | `"M5"` (mate-in-N for White) |
+| `scoreMate !== null` (negative) | `"-M5"` (mate-in-N for Black) |
 | `score > 0` | `"+X.X"` |
 | `score <= 0` | `"X.X"` |
 
