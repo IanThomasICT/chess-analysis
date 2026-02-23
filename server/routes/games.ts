@@ -7,6 +7,12 @@ import { isGameAnalyzed, getGameAnalysis } from "../lib/stockfish";
 import type { ChessComGame } from "../lib/chesscom";
 import type { AnalysisRow } from "../lib/stockfish";
 
+/** Chess.com usernames: alphanumeric, underscores, hyphens, up to 50 chars */
+const USERNAME_PATTERN = /^[a-zA-Z0-9_-]{1,50}$/;
+
+/** Game IDs: alphanumeric, underscores, hyphens, up to 50 chars */
+const GAME_ID_PATTERN = /^[a-zA-Z0-9_-]{1,50}$/;
+
 interface GameRow {
   id: string;
   username: string;
@@ -26,7 +32,11 @@ games.get("/games", async (c) => {
     return c.json({ games: [], username: null });
   }
 
-  // Fetch from Chess.com + upsert (same logic as old home.tsx loader)
+  if (!USERNAME_PATTERN.test(username)) {
+    return c.json({ error: "Invalid username format" }, 400);
+  }
+
+  // Fetch from Chess.com + upsert
   try {
     const chessComGames = await fetchRecentGames(username, 3);
 
@@ -42,8 +52,8 @@ games.get("/games", async (c) => {
           g.white.result === "win"
             ? "1-0"
             : g.black.result === "win"
-            ? "0-1"
-            : "1/2-1/2";
+              ? "0-1"
+              : "1/2-1/2";
 
         upsert.run(
           gameId,
@@ -53,7 +63,7 @@ games.get("/games", async (c) => {
           g.black.username,
           result,
           g.time_class,
-          g.end_time
+          g.end_time,
         );
       }
     });
@@ -71,7 +81,7 @@ games.get("/games", async (c) => {
       `SELECT id, username, pgn, white, black, result, time_class, end_time
        FROM games
        WHERE username = ?
-       ORDER BY end_time DESC`
+       ORDER BY end_time DESC`,
     )
     .all(username.toLowerCase()) as GameRow[];
 
@@ -80,6 +90,11 @@ games.get("/games", async (c) => {
 
 games.get("/games/:gameId", (c) => {
   const gameId = c.req.param("gameId");
+
+  if (!GAME_ID_PATTERN.test(gameId)) {
+    return c.json({ error: "Invalid game ID format" }, 400);
+  }
+
   const game = db
     .prepare("SELECT * FROM games WHERE id = ?")
     .get(gameId) as GameRow | null;
@@ -88,12 +103,19 @@ games.get("/games/:gameId", (c) => {
     return c.json({ error: "Game not found" }, 404);
   }
 
-  const fens = pgnToFens(game.pgn);
-  const moves = pgnToMoves(game.pgn).map((m) => ({
-    san: m.san,
-    from: m.from,
-    to: m.to,
-  }));
+  let fens: string[];
+  let moves: { san: string; from: string; to: string }[];
+  try {
+    fens = pgnToFens(game.pgn);
+    moves = pgnToMoves(game.pgn).map((m) => ({
+      san: m.san,
+      from: m.from,
+      to: m.to,
+    }));
+  } catch {
+    return c.json({ error: "Failed to parse game data" }, 500);
+  }
+
   const analyzed = isGameAnalyzed(gameId, fens.length);
   let analysis: AnalysisRow[] = [];
   if (analyzed) {

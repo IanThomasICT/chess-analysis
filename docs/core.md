@@ -13,10 +13,20 @@
 | Database | Bun's built-in SQLite (`bun:sqlite`) |
 | Engine | Stockfish (local subprocess via `Bun.spawn`) |
 | Linting | ESLint + `typescript-eslint` (strict + type-checked) |
+| Security | `hono/secure-headers`, in-memory rate limiter (`server/lib/rate-limit.ts`) |
 
 ## Design Principles
 
 This is a **local-only** application. There is no hosted backend. Stockfish runs as a child process of the Bun server, and the SQLite database lives on disk at the project root (`analysis.db`, gitignored). All Chess.com API calls are proxied through the server to avoid CORS issues.
+
+## Server Middleware
+
+The Hono server applies middleware in this order:
+
+1. `secureHeaders()` — X-Content-Type-Options, X-Frame-Options, HSTS, etc.
+2. `cors()` — development only (Vite `:5173` → Hono `:3001`); disabled in production (same-origin)
+3. `rateLimit()` — per-IP: 60 req/min general, 5 req/min for `/api/analyze/*`
+4. `app.onError()` — global catch-all returning generic 500 (never leaks internals)
 
 ## Data Flow
 

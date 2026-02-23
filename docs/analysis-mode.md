@@ -85,6 +85,18 @@ An async generator that yields one result per position. This design enables stre
 
 Resolved from `STOCKFISH_PATH` env var, falling back to `$HOME/bin/stockfish-bin`, `$HOME/.local/bin/stockfish`, then bare `"stockfish"` (relies on `$PATH`).
 
+### Concurrency Limiting
+
+A module-level counter limits concurrent Stockfish processes to `MAX_CONCURRENT_ANALYSES` (2). The analyze route checks `acquireAnalysisSlot()` before starting and returns 429 if at capacity. Slots are released in the SSE stream's `finally` block.
+
+### Per-Position Timeout
+
+`analyzeSinglePosition()` wraps `readUntilBestMove()` in `withTimeout(POSITION_TIMEOUT_MS)` (10s). If Stockfish hangs, the timeout error propagates through the async generator and the `finally` block kills the process.
+
+### UCI Command Sanitization
+
+`sendCmd()` strips `\r` and `\n` from commands before writing to stdin, preventing multi-command injection through crafted inputs.
+
 ## SSE Streaming Endpoint
 
 File: `server/routes/analyze.ts`

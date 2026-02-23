@@ -2,3 +2,15 @@
 build
 node_modules
 README.md
+.git
+.env
+.env.*
+analysis.db
+analysis.db-*
+test_analysis.db*
+e2e
+tests
+docs
+.opencode
+AGENTS.md
+IMPLEMENTATION_PLAN.md

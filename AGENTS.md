@@ -75,6 +75,18 @@ All server-only code lives in `server/`. Database access (`bun:sqlite`), Chess.c
 - The service uses `Bun.spawn` with `stdin: "pipe"` (returns `FileSink`, not `WritableStream`).
 - All scores are from White's perspective (positive = White advantage).
 
+## Security
+
+- **Input validation**: All user-supplied route parameters (`username`, `gameId`) are validated with regexes before use. Invalid inputs get a 400 response.
+- **Rate limiting**: `server/lib/rate-limit.ts` provides per-IP in-memory rate limiting. General API routes allow 60 req/min; `/api/analyze/*` allows 5 req/min.
+- **CORS**: Only enabled in development. In production the SPA is same-origin.
+- **Security headers**: `hono/secure-headers` adds standard hardening headers (X-Frame-Options, X-Content-Type-Options, HSTS, etc.) to all responses.
+- **Error handling**: The global `app.onError()` handler returns a generic 500 message. SSE error events contain `"Analysis failed"` — never internal error details. PGN parsing is wrapped in try/catch.
+- **Stockfish concurrency**: Max 2 concurrent analysis processes (`acquireAnalysisSlot()`/`releaseAnalysisSlot()` in `server/lib/stockfish.ts`). Exceeding returns 429.
+- **Stockfish timeout**: Each position has a 10-second timeout (`POSITION_TIMEOUT_MS`). If Stockfish hangs, the process is killed.
+- **UCI sanitization**: `sendCmd()` strips newlines from commands before writing to Stockfish stdin.
+- **SSRF protection**: `fetchMonthGames()` validates archive URLs start with `https://api.chess.com/` before fetching.
+
 ## React Rules
 
 Two ESLint plugins enforce React correctness (`eslint.config.ts`):

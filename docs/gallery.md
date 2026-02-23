@@ -38,6 +38,14 @@ interface ChessComGame {
 
 All requests include a `User-Agent: chess-analyzer/1.0` header as required by Chess.com's API policy.
 
+### Input Validation
+
+The `username` query parameter is validated against `/^[a-zA-Z0-9_-]{1,50}$/` in the route handler (`server/routes/games.ts`) before being passed to any API or DB call. Invalid usernames return 400.
+
+### SSRF Protection
+
+`fetchMonthGames()` validates that archive URLs start with `https://api.chess.com/` before fetching, preventing the server from being redirected to arbitrary endpoints.
+
 ### Result Mapping
 
 Chess.com uses result strings like `"win"`, `"resigned"`, `"timeout"`, etc. The loader normalizes these to standard notation:

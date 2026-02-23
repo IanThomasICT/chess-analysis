@@ -27,6 +27,30 @@ const SEARCH_MOVETIME = 1500;
 /** Minimum depth to accept from cache. Movetime search at 1500ms typically reaches 20-30+. */
 const MIN_CACHE_DEPTH = 16;
 
+/** Timeout per position — abort if Stockfish doesn't respond within this time. */
+const POSITION_TIMEOUT_MS = 10_000;
+
+/** Maximum concurrent Stockfish analysis processes. */
+const MAX_CONCURRENT_ANALYSES = 2;
+
+let activeAnalyses = 0;
+
+/**
+ * Acquire an analysis slot. Returns true if a slot is available, false if at capacity.
+ */
+export function acquireAnalysisSlot(): boolean {
+  if (activeAnalyses >= MAX_CONCURRENT_ANALYSES) return false;
+  activeAnalyses++;
+  return true;
+}
+
+/**
+ * Release an analysis slot after analysis completes or fails.
+ */
+export function releaseAnalysisSlot(): void {
+  if (activeAnalyses > 0) activeAnalyses--;
+}
+
 interface Score {
   cp: number | null;
   mate: number | null;
@@ -43,7 +67,7 @@ interface AnalysisResult {
  * Returns the final evaluation from the last "info" line and the best move.
  */
 async function readUntilBestMove(
-  reader: ReadableStreamDefaultReader<Uint8Array>
+  reader: ReadableStreamDefaultReader<Uint8Array>,
 ): Promise<AnalysisResult> {
   const decoder = new TextDecoder();
   let buffer = "";
@@ -100,7 +124,7 @@ async function readUntilBestMove(
  */
 async function readUntil(
   reader: ReadableStreamDefaultReader<Uint8Array>,
-  target: string
+  target: string,
 ): Promise<void> {
   const decoder = new TextDecoder();
   let buffer = "";
@@ -109,6 +133,31 @@ async function readUntil(
     if (done) break;
     buffer += decoder.decode(value, { stream: true });
     if (buffer.includes(target)) break;
+  }
+}
+
+/**
+ * Race a promise against a timeout. Rejects with the given message if the timeout fires first.
+ */
+async function withTimeout<T>(
+  promise: Promise<T>,
+  ms: number,
+  message: string,
+): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_resolve, reject) => {
+        timeoutId = setTimeout(() => {
+          reject(new Error(message));
+        }, ms);
+      }),
+    ]);
+  } finally {
+    if (timeoutId !== undefined) {
+      clearTimeout(timeoutId);
+    }
   }
 }
 
@@ -135,7 +184,9 @@ export function spawnStockfish(): StockfishHandle {
   const reader = stdout.getReader() as ReadableStreamDefaultReader<Uint8Array>;
 
   const sendCmd = (cmd: string): void => {
-    void stdin.write(cmd + "\n");
+    // Strip newlines to prevent UCI command injection
+    const sanitized = cmd.replace(/[\r\n]/g, "");
+    void stdin.write(sanitized + "\n");
     void stdin.flush();
   };
 
@@ -171,7 +222,11 @@ async function analyzeSinglePosition(
 ): Promise<AnalysisResult> {
   sf.sendCmd("position fen " + fen);
   sf.sendCmd("go movetime " + String(SEARCH_MOVETIME));
-  const result = await readUntilBestMove(sf.reader);
+  const result = await withTimeout(
+    readUntilBestMove(sf.reader),
+    POSITION_TIMEOUT_MS,
+    "Stockfish timed out analyzing position",
+  );
 
   // UCI scores are from the side-to-move's perspective.
   // Normalize to White's perspective (like Lichess does).
@@ -204,7 +259,7 @@ export async function* analyzeGame(
   // Check how many positions are already analyzed
   const existingCount = db
     .prepare(
-      `SELECT COUNT(*) as count FROM analysis WHERE game_id = ? AND depth >= ?`
+      `SELECT COUNT(*) as count FROM analysis WHERE game_id = ? AND depth >= ?`,
     )
     .get(gameId, MIN_CACHE_DEPTH) as { count: number };
 
@@ -213,7 +268,7 @@ export async function* analyzeGame(
     const rows = db
       .prepare(
         `SELECT move_index, fen, score_cp, score_mate, best_move, depth
-         FROM analysis WHERE game_id = ? ORDER BY move_index`
+         FROM analysis WHERE game_id = ? ORDER BY move_index`,
       )
       .all(gameId) as Array<{
       move_index: number;
@@ -253,7 +308,7 @@ export async function* analyzeGame(
       const existing = db
         .prepare(
           `SELECT score_cp, score_mate, best_move, depth
-           FROM analysis WHERE game_id = ? AND move_index = ? AND depth >= ?`
+           FROM analysis WHERE game_id = ? AND move_index = ? AND depth >= ?`,
         )
         .get(gameId, i, MIN_CACHE_DEPTH) as {
         score_cp: number | null;
@@ -287,7 +342,7 @@ export async function* analyzeGame(
         result.score.cp,
         result.score.mate,
         result.bestMove,
-        result.depth
+        result.depth,
       );
 
       yield {
@@ -314,7 +369,7 @@ export function isGameAnalyzed(
 ): boolean {
   const result = db
     .prepare(
-      `SELECT COUNT(*) as count FROM analysis WHERE game_id = ? AND depth >= ?`
+      `SELECT COUNT(*) as count FROM analysis WHERE game_id = ? AND depth >= ?`,
     )
     .get(gameId, MIN_CACHE_DEPTH) as { count: number };
   return result.count >= totalPositions;
@@ -327,7 +382,7 @@ export function getGameAnalysis(gameId: string): AnalysisRow[] {
   return db
     .prepare(
       `SELECT move_index, fen, move_san, score_cp, score_mate, best_move, depth
-       FROM analysis WHERE game_id = ? ORDER BY move_index`
+       FROM analysis WHERE game_id = ? ORDER BY move_index`,
     )
     .all(gameId) as AnalysisRow[];
 }

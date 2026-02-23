@@ -1,4 +1,5 @@
 const USER_AGENT = "chess-analyzer/1.0";
+const CHESS_COM_API_PREFIX = "https://api.chess.com/";
 
 export interface ChessComGame {
   url: string;
@@ -23,11 +24,11 @@ export interface ChessComGame {
 export async function fetchArchives(username: string): Promise<string[]> {
   const r = await fetch(
     `https://api.chess.com/pub/player/${username}/games/archives`,
-    { headers: { "User-Agent": USER_AGENT } }
+    { headers: { "User-Agent": USER_AGENT } },
   );
   if (!r.ok) {
     throw new Error(
-      "Failed to fetch archives for " + username + ": " + String(r.status)
+      "Failed to fetch archives for " + username + ": " + String(r.status),
     );
   }
   const { archives } = (await r.json()) as { archives: string[] };
@@ -35,14 +36,18 @@ export async function fetchArchives(username: string): Promise<string[]> {
 }
 
 export async function fetchMonthGames(
-  archiveUrl: string
+  archiveUrl: string,
 ): Promise<ChessComGame[]> {
+  // Validate the URL points to Chess.com API to prevent SSRF
+  if (!archiveUrl.startsWith(CHESS_COM_API_PREFIX)) {
+    throw new Error("Invalid archive URL: expected Chess.com API endpoint");
+  }
   const r = await fetch(archiveUrl, {
     headers: { "User-Agent": USER_AGENT },
   });
   if (!r.ok) {
     throw new Error(
-      "Failed to fetch games from " + archiveUrl + ": " + String(r.status)
+      "Failed to fetch games from " + archiveUrl + ": " + String(r.status),
     );
   }
   const { games } = (await r.json()) as { games: ChessComGame[] };
@@ -55,7 +60,7 @@ export async function fetchMonthGames(
  */
 export async function fetchRecentGames(
   username: string,
-  months = 3
+  months = 3,
 ): Promise<ChessComGame[]> {
   const archives = await fetchArchives(username);
   const recentArchives = archives.slice(-months);

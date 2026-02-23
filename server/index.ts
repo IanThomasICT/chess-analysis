@@ -1,16 +1,34 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
+import { secureHeaders } from "hono/secure-headers";
 import { serveStatic } from "hono/bun";
 import games from "./routes/games";
 import analyze from "./routes/analyze";
+import { rateLimit } from "./lib/rate-limit";
 
 const app = new Hono();
 
-// CORS for dev (Vite on :5173, API on :3001)
-app.use("/api/*", cors());
+// Security headers for all responses
+app.use("*", secureHeaders());
+
+// CORS — only needed in dev (Vite on :5173 → Hono on :3001).
+// In production the SPA is served same-origin so CORS headers are unnecessary.
+if (process.env.NODE_ENV !== "production") {
+  app.use("/api/*", cors({ origin: "http://localhost:5173" }));
+}
+
+// Rate limiting — general API limit + stricter limit for CPU-intensive analysis
+app.use("/api/*", rateLimit({ windowMs: 60_000, max: 60 }));
+app.use("/api/analyze/*", rateLimit({ windowMs: 60_000, max: 5 }));
 
 app.route("/api", games);
 app.route("/api", analyze);
+
+// Global error handler — never leak internal details to clients
+app.onError((err, c) => {
+  console.error("Unhandled error:", err.message);
+  return c.json({ error: "Internal server error" }, 500);
+});
 
 // Production: serve built SPA
 if (process.env.NODE_ENV === "production") {
