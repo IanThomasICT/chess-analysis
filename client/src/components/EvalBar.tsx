@@ -3,13 +3,15 @@ import { memo } from "react";
 interface EvalBarProps {
   score: number; // in pawns, from White's perspective
   scoreMate: number | null; // mate distance (positive = White mates), null when no forced mate
+  orientation?: "white" | "black";
 }
 
-export const EvalBar = memo(function EvalBar({ score, scoreMate }: EvalBarProps) {
-  // Clamp score to [-10, 10] pawns
-  const clamped = Math.max(-10, Math.min(10, score));
-  // Convert to percentage (white on bottom)
-  const whiteHeight = ((clamped + 10) / 20) * 100;
+export const EvalBar = memo(function EvalBar({ score, scoreMate, orientation = "white" }: EvalBarProps) {
+  // Exponential mapping via tanh — ±5.5 pawns fills nearly the entire bar,
+  // reflecting the near-certain winning probability at that advantage.
+  const whitePercent = 50 + 50 * Math.tanh(score / 3);
+
+  const flipped = orientation === "black";
 
   let displayScore: string;
   if (scoreMate !== null) {
@@ -19,22 +21,30 @@ export const EvalBar = memo(function EvalBar({ score, scoreMate }: EvalBarProps)
     displayScore = score > 0 ? `+${score.toFixed(1)}` : score.toFixed(1);
   }
 
-  const blackHeight = String(100 - whiteHeight);
-  const whiteHeightStr = String(whiteHeight);
-  const topOffset = String(100 - whiteHeight + 2);
-  const bottomOffset = String(whiteHeight + 2);
+  // When flipped (black on bottom), white section moves to top
+  const topHeight = String(flipped ? whitePercent : 100 - whitePercent);
+  const bottomHeight = String(flipped ? 100 - whitePercent : whitePercent);
+  const topBg = flipped ? "bg-white" : "bg-gray-800";
+  const bottomBg = flipped ? "bg-gray-800" : "bg-white";
+
+  // Score label: 2% past the boundary, inside the winning side's section.
+  // Boundary = distance from top to the dividing line between sections.
+  const boundary = flipped ? whitePercent : 100 - whitePercent;
+  const useTop = (score >= 0) !== flipped;
+  const topPos = String(boundary + 2);
+  const bottomPos = String(100 - boundary + 2);
 
   return (
     <div className="w-full h-full flex flex-col rounded overflow-hidden border border-gray-300 dark:border-gray-600 relative">
-      {/* Black section (top) */}
+      {/* Top section */}
       <div
-        className="bg-gray-800 transition-all duration-300 ease-out"
-        style={{ height: `${blackHeight}%` }}
+        className={`${topBg} transition-all duration-300 ease-out`}
+        style={{ height: `${topHeight}%` }}
       />
-      {/* White section (bottom) */}
+      {/* Bottom section */}
       <div
-        className="bg-white transition-all duration-300 ease-out"
-        style={{ height: `${whiteHeightStr}%` }}
+        className={`${bottomBg} transition-all duration-300 ease-out`}
+        style={{ height: `${bottomHeight}%` }}
       />
       {/* Score label */}
       <div className="absolute inset-0 flex items-center justify-center">
@@ -43,8 +53,8 @@ export const EvalBar = memo(function EvalBar({ score, scoreMate }: EvalBarProps)
             score >= 0 ? "text-gray-800" : "text-white"
           }`}
           style={{
-            top: score >= 0 ? `${topOffset}%` : undefined,
-            bottom: score < 0 ? `${bottomOffset}%` : undefined,
+            top: useTop ? `${topPos}%` : undefined,
+            bottom: !useTop ? `${bottomPos}%` : undefined,
             position: "absolute",
           }}
         >

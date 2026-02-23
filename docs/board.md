@@ -10,16 +10,21 @@ The board is rendered by `@lichess-org/chessground` v10 (the scoped package, not
 
 ```tsx
 interface ChessBoardProps {
-  fen: string;               // FEN string to display
-  lastMove?: [Key, Key];     // [from, to] squares to highlight
-  autoShapes?: DrawShape[];  // Arrows/circles drawn on the board (e.g. best move arrow)
-  config?: Partial<Config>;  // Additional chessground config overrides
+  fen: string;                        // FEN string to display
+  orientation?: "white" | "black";    // Board orientation (default "white")
+  lastMove?: [Key, Key];              // [from, to] squares to highlight
+  autoShapes?: DrawShape[];           // Arrows/circles drawn on the board (e.g. best move arrow)
+  config?: Partial<Config>;           // Additional chessground config overrides
 }
 ```
 
 ### Initialization
 
-Chessground is initialized once via a `useEffect` with empty deps. Subsequent FEN/lastMove/autoShapes changes are applied via `api.current?.set(...)` without recreating the instance. The instance is destroyed on unmount.
+Chessground is initialized once via a `useEffect` with empty deps. Subsequent FEN/lastMove/autoShapes/orientation changes are applied via `api.current?.set(...)` without recreating the instance. The instance is destroyed on unmount.
+
+### Board Orientation
+
+The `orientation` prop controls which color appears at the bottom of the board. The Analysis page defaults this to the searched user's color (e.g. if the user played Black, the board starts with Black on the bottom). A flip button in the navigation controls toggles orientation.
 
 Position updates pass `animation: { enabled: false }` to `api.set()` for instant piece placement. The 200ms animation from initialization only applies to the first render. This prevents animation queueing during rapid keyboard navigation.
 

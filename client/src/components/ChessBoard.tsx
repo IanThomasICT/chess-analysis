@@ -9,12 +9,13 @@ const EMPTY_SHAPES: DrawShape[] = [];
 
 interface ChessBoardProps {
   fen: string;
+  orientation?: "white" | "black";
   lastMove?: [Key, Key];
   autoShapes?: DrawShape[];
   config?: Partial<Config>;
 }
 
-export const ChessBoard = memo(function ChessBoard({ fen, lastMove, autoShapes, config }: ChessBoardProps) {
+export const ChessBoard = memo(function ChessBoard({ fen, orientation = "white", lastMove, autoShapes, config }: ChessBoardProps) {
   const boardRef = useRef<HTMLDivElement>(null);
   const apiRef = useRef<Api | null>(null);
 
@@ -23,6 +24,7 @@ export const ChessBoard = memo(function ChessBoard({ fen, lastMove, autoShapes, 
     apiRef.current = Chessground(boardRef.current, {
       fen,
       lastMove,
+      orientation,
       movable: { free: false },
       draggable: { enabled: false },
       selectable: { enabled: false },
@@ -40,10 +42,11 @@ export const ChessBoard = memo(function ChessBoard({ fen, lastMove, autoShapes, 
     apiRef.current?.set({
       fen,
       lastMove,
+      orientation,
       animation: { enabled: false },
       drawable: { autoShapes: autoShapes ?? EMPTY_SHAPES },
     });
-  }, [fen, lastMove, autoShapes]);
+  }, [fen, lastMove, autoShapes, orientation]);
 
   return <div ref={boardRef} className="w-full h-full aspect-square" />;
 });

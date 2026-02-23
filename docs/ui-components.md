@@ -4,28 +4,39 @@
 
 File: `client/src/components/EvalBar.tsx`
 
-A vertical evaluation bar with white on the bottom and black on top.
+A vertical evaluation bar that flips to match the board orientation.
 
 ### Props
 
 ```ts
 interface EvalBarProps {
-  score: number;           // in pawns, from White's perspective
-  scoreMate: number | null; // mate distance (positive = White mates), null when no forced mate
+  score: number;                    // in pawns, from White's perspective
+  scoreMate: number | null;         // mate distance (positive = White mates), null when no forced mate
+  orientation?: "white" | "black";  // matches board orientation (default "white")
 }
 ```
 
-### Score Clamping
+### Orientation
 
-The score is clamped to `[-10, 10]` pawns and mapped to a percentage:
+When `orientation` is `"white"` (default), white is on the bottom and black on top. When `"black"`, the sections swap — white goes to the top and black to the bottom. The score label is always positioned 2% inside the winning side's section, near the boundary between sections. The Analysis page passes the same orientation value used by the ChessBoard so both stay in sync.
+
+### Exponential Score Mapping
+
+The score is mapped to a percentage using `tanh` for exponential growth that saturates near the edges:
 
 ```
-whiteHeight = ((clampedScore + 10) / 20) * 100
+whitePercent = 50 + 50 * tanh(score / 3)
 ```
 
-- Score of 0 -> white fills 50%
-- Score of +10 -> white fills 100%
-- Score of -10 -> white fills 0%
+| Score (pawns) | White % | Interpretation |
+|---|---|---|
+| 0 | 50% | Equal position |
+| +1 | ~66% | Slight advantage |
+| +3 | ~88% | Clear advantage |
+| +5.5 | ~97.5% | Near-certain win |
+| +10 (mate) | ~99.9% | Decisive |
+
+The curve grows quickly for the first few pawns and asymptotically approaches the edges. No clamping is needed since `tanh` naturally saturates.
 
 ### Display Label
 

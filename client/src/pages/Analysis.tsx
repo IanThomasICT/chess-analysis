@@ -42,6 +42,7 @@ export function Analysis() {
   const [analysis, setAnalysis] = useState<AnalysisRow[]>([]);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [userFlipped, setUserFlipped] = useState(false);
 
   // Sync initial analysis when data loads
   useEffect(() => {
@@ -55,6 +56,15 @@ export function Analysis() {
   const moves = data?.moves ?? EMPTY_MOVES;
   const analyzed = data?.analyzed ?? false;
   const maxMove = fens.length - 1;
+
+  // Board orientation — default to the searched user's color, toggleable via flip button
+  const defaultOrientation: "white" | "black" =
+    game !== undefined && game.username.toLowerCase() === game.black.toLowerCase()
+      ? "black"
+      : "white";
+  const orientation: "white" | "black" = userFlipped
+    ? (defaultOrientation === "white" ? "black" : "white")
+    : defaultOrientation;
 
   // Set page title
   useEffect(() => {
@@ -262,6 +272,13 @@ export function Analysis() {
 
   const progressStr = String(Math.round(progress));
 
+  // Player names relative to board orientation
+  const topPlayerName = orientation === "white" ? game.black : game.white;
+  const bottomPlayerName = orientation === "white" ? game.white : game.black;
+  const topIsBlack = orientation === "white";
+  const isSearchedUserTop = game.username.toLowerCase() === topPlayerName.toLowerCase();
+  const isSearchedUserBottom = game.username.toLowerCase() === bottomPlayerName.toLowerCase();
+
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-950 flex flex-col">
       {/* Header */}
@@ -305,12 +322,31 @@ export function Analysis() {
         <div className="grid grid-cols-[auto_1fr_280px] gap-4 h-[min(calc(100vh-200px),600px)]">
           {/* Eval Bar */}
           <div className="w-8">
-            <EvalBar score={currentScore} scoreMate={currentMate} />
+            <EvalBar score={currentScore} scoreMate={currentMate} orientation={orientation} />
           </div>
 
-          {/* Chessground Board */}
-          <div className="aspect-square max-h-full mx-auto">
-            <ChessBoard fen={fens[currentMove]} lastMove={lastMove} autoShapes={bestMoveShapes} />
+          {/* Board with player names */}
+          <div className="flex flex-col h-full min-w-0">
+            {/* Top player */}
+            <div className="flex items-center gap-2 py-1">
+              <div className={`w-3 h-3 rounded-full border border-gray-400 shrink-0 ${topIsBlack ? "bg-gray-800" : "bg-white"}`} />
+              <span className={`text-sm truncate ${isSearchedUserTop ? "font-semibold text-gray-900 dark:text-white" : "text-gray-600 dark:text-gray-400"}`}>
+                {topPlayerName}
+              </span>
+            </div>
+            {/* Chessground Board */}
+            <div className="flex-1 min-h-0 flex items-center justify-center">
+              <div className="aspect-square h-full max-w-full">
+                <ChessBoard fen={fens[currentMove]} lastMove={lastMove} autoShapes={bestMoveShapes} orientation={orientation} />
+              </div>
+            </div>
+            {/* Bottom player */}
+            <div className="flex items-center gap-2 py-1">
+              <div className={`w-3 h-3 rounded-full border border-gray-400 shrink-0 ${topIsBlack ? "bg-white" : "bg-gray-800"}`} />
+              <span className={`text-sm truncate ${isSearchedUserBottom ? "font-semibold text-gray-900 dark:text-white" : "text-gray-600 dark:text-gray-400"}`}>
+                {bottomPlayerName}
+              </span>
+            </div>
           </div>
 
           {/* Move List */}
@@ -363,6 +399,14 @@ export function Analysis() {
             className="px-3 py-1 text-sm rounded bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300"
           >
             &raquo;
+          </button>
+          <div className="w-px h-5 bg-gray-300 dark:bg-gray-600 mx-1" />
+          <button
+            onClick={() => setUserFlipped((f) => !f)}
+            className="px-3 py-1 text-sm rounded bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300"
+            title="Flip board"
+          >
+            &#x21C5;
           </button>
         </div>
       </main>
