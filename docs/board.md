@@ -41,7 +41,7 @@ Configuration locks down all interaction:
 
 ### CSS
 
-Three CSS files are imported globally in `app/root.tsx`:
+Three CSS files are imported globally in `client/src/main.tsx`:
 
 - `chessground.base.css` -- layout and sizing
 - `chessground.brown.css` -- brown board theme
@@ -52,7 +52,7 @@ Three CSS files are imported globally in `app/root.tsx`:
 Chessground ships its own ESM and must be excluded from Vite's dep optimization:
 
 ```ts
-// vite.config.ts
+// client/vite.config.ts
 optimizeDeps: { exclude: ["@lichess-org/chessground"] }
 ```
 

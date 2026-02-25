@@ -14,193 +14,142 @@ Read `docs/README.md` first. It indexes all specs with related files so you can 
 ## Commands
 
 ```bash
-bun run dev          # Start dev servers (Vite SPA + Hono API)
+bun run dev          # Start dev servers (Vite SPA on :5173 + Hono API on :3001)
 bun run build        # Production build (Vite client)
 bun run typecheck    # tsc -b + eslint (run this before committing)
 bun run lint         # ESLint only
 bun run validate     # typecheck + lint + build (run after every change)
+bun run test         # Unit tests (bun:test, tests/ directory)
+bun test tests/pgn.test.ts              # Run a single unit test file
+bun run test:e2e     # Seed DB + run all e2e tests (requires dev servers running)
+bun test --timeout 30000 e2e/smoke.test.ts  # Run a single e2e file
+bun run test:all     # Unit tests + e2e tests
 ```
 
 ## Architecture
 
 Split-stack: **Vite React SPA** (`client/`) + **Bun Hono API** (`server/`).
 
-- `client/` — React SPA with TanStack Query, react-router (library mode), Tailwind CSS
-- `server/` — Hono HTTP framework on Bun, SQLite database, Stockfish integration
+- `client/` — React 19 SPA with TanStack Query, react-router v7 (library mode, CSR), Tailwind CSS v4
+- `server/` — Hono HTTP framework on Bun, SQLite database (`bun:sqlite`), Stockfish integration
 - Dev mode: Vite on `:5173` proxies `/api/*` to Hono on `:3001`
 - Production: Hono serves both built static SPA and API on a single port
 
-## Strict Type Safety — No Exceptions
+### Key directories
 
-This codebase enforces **zero `any` types**. The ESLint config (`eslint.config.ts`) uses `typescript-eslint` strict type-checked mode with all `no-unsafe-*` rules set to error.
+- `client/src/pages/` — route-level page components (`Home.tsx`, `Analysis.tsx`)
+- `client/src/components/` — reusable UI components (`ChessBoard`, `EvalBar`, `EvalGraph`, `MoveList`, `GameCard`)
+- `client/src/api.ts` — typed fetch wrappers and shared interfaces (`GameRow`, `AnalysisRow`, etc.)
+- `server/routes/` — Hono route handlers (`games.ts`, `analyze.ts`)
+- `server/lib/` — database, Chess.com API, Stockfish subprocess, PGN parsing, rate limiting
+
+## Code Style
+
+### Strict Type Safety — No Exceptions
+
+Zero `any` types enforced. ESLint uses `typescript-eslint` strict type-checked mode with all `no-unsafe-*` rules set to error.
 
 - Never use `any`. Use `unknown` and narrow with type guards, or define a proper interface.
-- Never use `as any`. If you need a type assertion, assert to a specific type.
+- Never use `as any`. Assert to a specific type if needed.
 - Never use `// eslint-disable` to suppress type safety rules.
-- Use `void` to explicitly discard promise return values when the result is intentionally unused (e.g. `void stdin.flush()`).
+- Use `void` to explicitly discard promise return values (e.g. `void stdin.flush()`).
 
-## Type Import Style
+### Imports
 
-`separate-type-imports` is enforced by ESLint. Use `import type` for type-only imports.
+- **Type imports**: `separate-type-imports` enforced. Always use `import type` on a separate line for type-only imports.
+- **Relative paths**: All imports use relative paths. A `~/*` path alias exists in `client/tsconfig.json` but is not used.
+- **CSS imports**: Centralized in `client/src/main.tsx` only. Do not import CSS elsewhere.
+- `verbatimModuleSyntax: true` in both tsconfigs — `import type` is required for type-only imports.
 
-## Boolean Expressions
+### Boolean Expressions
 
-`strict-boolean-expressions` is enabled. Do not use truthy/falsy shortcuts on strings, numbers, or objects:
+`strict-boolean-expressions` is enabled. No truthy/falsy shortcuts on strings, numbers, or objects:
 
 ```ts
 // WRONG
 if (username) { ... }
-if (data.error) { ... }
 
 // CORRECT
 if (username !== null && username !== "") { ... }
-if (data.error !== undefined) { ... }
 ```
 
-## Server Code
+### Naming Conventions
 
-All server-only code lives in `server/`. Database access (`bun:sqlite`), Chess.com API calls, and Stockfish subprocess code are in `server/lib/`. API routes are in `server/routes/`.
+| Category | Convention | Examples |
+|---|---|---|
+| Components | PascalCase files, named exports | `ChessBoard.tsx`, `export const ChessBoard = memo(...)` |
+| Pages | PascalCase files | `Home.tsx`, `Analysis.tsx` |
+| Server libs/routes | camelCase files | `db.ts`, `chesscom.ts`, `games.ts` |
+| Tests | kebab-case with `.test.ts` | `pgn.test.ts`, `eval-logic.test.ts` |
+| Module constants | SCREAMING_SNAKE_CASE | `EMPTY_FENS`, `MAX_CONCURRENT_ANALYSES` |
+| Functions | camelCase | `fetchGames`, `pgnToFens`, `analyzeGame` |
+| Interfaces | PascalCase | `GameRow`, `AnalysisRow`, `ChessBoardProps` |
+| Refs | Must end in `Ref` | `boardRef`, `apiRef`, `analysisStartedRef` |
+| Unused vars | Prefix with `_` | `_unused` (ESLint allows `_`-prefixed) |
+
+### React Patterns
+
+- **Hooks before returns**: All hooks must appear before any `if (...) return` guard.
+- **Exhaustive deps enforced**: Every reactive value in `useEffect`/`useMemo`/`useCallback` must be in the dependency array.
+- **Stable fallback references**: Use module-level constants instead of inline `?? []` to avoid new references each render.
+- **React.memo**: Components receiving stable props should be wrapped. Current memo'd components: `ChessBoard`, `EvalBar`, `EvalGraph`, `MoveList`.
+- **useState naming**: Destructure as `[val, setVal]` (enforced by `@eslint-react`).
+
+### Error Handling
+
+- **Server**: Global `app.onError()` returns generic 500. SSE errors emit `"Analysis failed"` — never internal details.
+- **Client**: `useQuery` provides `isPending`/`isError` states. API wrappers throw on non-OK responses.
+- **Input validation**: Route parameters validated with regexes (`/^[a-zA-Z0-9_-]{1,50}$/`). Invalid input returns 400.
+- **PGN parsing**: Wrapped in try/catch. Invalid PGN returns 500 with generic message.
 
 ## Database
 
-- SQLite database is at `analysis.db` in the project root (gitignored).
-- Schema is created on import in `server/lib/db.ts`.
-- All query results use `as` assertions to typed interfaces — keep these interfaces in sync with the schema.
-- The analysis table caches Stockfish results. Before spawning Stockfish, check `COUNT(*)` to avoid re-analyzing.
+- SQLite at `analysis.db` in project root (gitignored). Schema created on import in `server/lib/db.ts`.
+- All query results use `as` assertions to typed interfaces — keep interfaces in sync with schema.
+- The `analysis` table caches Stockfish results. Check `COUNT(*)` before spawning Stockfish to avoid re-analyzing.
 
 ## Stockfish
 
-- Binary path: `STOCKFISH_PATH` env var, or `$HOME/.local/bin/stockfish`, or `/usr/local/bin/stockfish`.
-- Stockfish must be installed separately — it is not bundled with the project.
-- The service uses `Bun.spawn` with `stdin: "pipe"` (returns `FileSink`, not `WritableStream`).
-- All scores are from White's perspective (positive = White advantage).
-
-## Security
-
-- **Input validation**: All user-supplied route parameters (`username`, `gameId`) are validated with regexes before use. Invalid inputs get a 400 response.
-- **Rate limiting**: `server/lib/rate-limit.ts` provides per-IP in-memory rate limiting. General API routes allow 60 req/min; `/api/analyze/*` allows 5 req/min.
-- **CORS**: Only enabled in development. In production the SPA is same-origin.
-- **Security headers**: `hono/secure-headers` adds standard hardening headers (X-Frame-Options, X-Content-Type-Options, HSTS, etc.) to all responses.
-- **Error handling**: The global `app.onError()` handler returns a generic 500 message. SSE error events contain `"Analysis failed"` — never internal error details. PGN parsing is wrapped in try/catch.
-- **Stockfish concurrency**: Max 2 concurrent analysis processes (`acquireAnalysisSlot()`/`releaseAnalysisSlot()` in `server/lib/stockfish.ts`). Exceeding returns 429.
-- **Stockfish timeout**: Each position has a 10-second timeout (`POSITION_TIMEOUT_MS`). If Stockfish hangs, the process is killed.
-- **UCI sanitization**: `sendCmd()` strips newlines from commands before writing to Stockfish stdin.
-- **SSRF protection**: `fetchMonthGames()` validates archive URLs start with `https://api.chess.com/` before fetching.
-
-## React Rules
-
-Two ESLint plugins enforce React correctness (`eslint.config.ts`):
-
-- **`eslint-plugin-react-hooks`** — `rules-of-hooks` (error) and `exhaustive-deps` (error)
-- **`@eslint-react/eslint-plugin`** — `recommended-type-checked` preset with leak detection and DOM safety rules upgraded to error
-
-### Hooks must be called above early returns
-
-All `useState`, `useMemo`, `useCallback`, `useEffect`, `useRef`, `useDeferredValue`, and any custom hooks must appear **before** any `if (...) return` guard. React requires hooks to execute in the same order on every render. `react-hooks/rules-of-hooks` enforces this at lint time.
-
-```tsx
-// WRONG — hook after conditional return
-if (isPending) return <Loading />;
-const lastMove = useMemo(() => ..., [dep]);
-
-// CORRECT — all hooks before any early return
-const lastMove = useMemo(() => ..., [dep]);
-if (isPending) return <Loading />;
-```
-
-### Exhaustive deps are enforced
-
-Every reactive value used inside `useEffect`, `useMemo`, or `useCallback` must appear in the dependency array. The only acceptable exception is one-time initialization of imperative DOM libraries (e.g. Chessground), which must include a justification:
-
-```ts
-// eslint-disable-next-line react-hooks/exhaustive-deps -- One-time init; updates go through api.set()
-}, []);
-```
-
-### Stable references for fallback values
-
-Do not use `data?.foo ?? []` inline — this creates a new array reference every render, which defeats `useMemo`/`React.memo` dependency checks. Use module-level constants:
-
-```tsx
-const EMPTY_ITEMS: Item[] = [];
-// inside component:
-const items = data?.items ?? EMPTY_ITEMS;
-```
-
-### Ref naming convention
-
-`useRef` identifiers must be named `ref` or end in `Ref` (e.g. `boardRef`, `apiRef`, `analysisStartedRef`).
-
-### Wrap components in React.memo when appropriate
-
-Components that receive stable props from memoized parents should be wrapped in `React.memo` to skip unnecessary re-renders. All current analysis sub-components (`ChessBoard`, `EvalBar`, `EvalGraph`, `MoveList`) are wrapped.
+- Binary path: `STOCKFISH_PATH` env var → `$HOME/bin/stockfish-bin` → `$HOME/.local/bin/stockfish` → bare `"stockfish"` (PATH lookup).
+- Uses `Bun.spawn` with `stdin: "pipe"` (returns `FileSink`, not `WritableStream`).
+- All scores normalized to White's perspective (positive = White advantage).
+- Max 2 concurrent analysis processes. Per-position timeout of 10 seconds.
+- `sendCmd()` strips newlines from commands to prevent UCI injection.
 
 ## Chessground
 
 - Use `@lichess-org/chessground` (v10 scoped package), not the old `chessground` package.
-- Must be excluded from Vite's `optimizeDeps` in `client/vite.config.ts`.
-- The `Key` type comes from `@lichess-org/chessground/types`.
-- Board CSS is imported in `client/src/main.tsx` — do not import it elsewhere.
+- Excluded from Vite's `optimizeDeps` in `client/vite.config.ts`.
+- CSS imported in `client/src/main.tsx` — do not import elsewhere.
 
 ## uPlot
 
-- The eval graph uses [uPlot](https://github.com/leeoniya/uPlot) — a lightweight (~35KB) canvas-based charting library.
-- uPlot is imperative: one-time init in `useEffect`, then `setData()` / `redraw()` for updates. No React reconciliation on the chart itself.
-- **Deferred init via ResizeObserver**: The chart is NOT created inline in the `useEffect`. Instead, a `ResizeObserver` watches the container and creates the chart on the first callback with non-zero dimensions. This avoids 0x0 canvas when the container hasn't been laid out yet (common with conditional rendering + StrictMode double-mount). The latest data is read from `alignedDataRef` at creation time so it's never stale.
-- Custom overlays (zero line, inflection dots, current-move indicator) are drawn via the `draw` hook directly on the canvas context.
-- Click-to-navigate uses an event listener on `self.over` (the plot overlay div).
-- CSS is imported in `client/src/main.tsx` (`uplot/dist/uPlot.min.css`).
+- Imperative canvas-based charting. One-time init in `useEffect`, then `setData()`/`redraw()` for updates.
+- **Deferred init via ResizeObserver**: Chart created on first non-zero dimension callback, not inline in `useEffect`. Avoids 0x0 canvas with conditional rendering + StrictMode.
+- Custom overlays (zero line, inflection dots, current-move indicator) drawn via the `draw` hook on canvas context.
+- CSS imported in `client/src/main.tsx`.
 
 ## Move Indexing
 
 Position index 0 = starting position (before any move). Move array index 0 = first move (White's first). `fens[i+1]` is the position after `moves[i]`.
 
-## E2E Tests
+## Testing
 
-E2e tests live in `e2e/` and use **Playwright-core** driven by **bun:test** (not the `@playwright/test` runner).
+### Unit Tests (`tests/`)
 
-### Commands
+Tests use `bun:test`. They replicate pure logic from components/services rather than importing React components directly, avoiding rendering and subprocess dependencies.
 
-```bash
-bun run test:e2e     # Seed DB + run all e2e tests (30s timeout)
-bun test --timeout 30000 e2e/smoke.test.ts   # Run a single e2e file
-```
+### E2E Tests (`e2e/`)
 
-E2e tests require **both dev servers running** (`bun run dev` — Vite on `:5173` + Hono on `:3001`). The Vite dev server proxies `/api/*` to the Hono API; if only Vite is running, all API calls return 500.
+Use **Playwright-core** driven by **bun:test** (not the `@playwright/test` runner). Require both dev servers running (`bun run dev`).
 
-### Test Data
+- `e2e/fixtures.ts` seeds `analysis.db` with test games under username `e2e_fakeplayer` (must not exist on Chess.com).
+- **Shared page pattern**: `usePage(path, opts?)` navigates once per `describe` block. Do not create a new page per test.
+- Use `{ exact: true }` with `getByText` for ambiguous text matches ("Win" vs "Wins").
 
-- `e2e/fixtures.ts` seeds `analysis.db` with 3 test games under username `e2e_fakeplayer`.
-- `e2e/seed.ts` is the CLI entry point (`bun e2e/seed.ts`) — run before tests.
-- **The seeded username must not exist on Chess.com.** The `/api/games` route always calls Chess.com before reading the DB cache. A real Chess.com username causes the API to return real games alongside seeded ones, breaking count assertions. A nonexistent username gets a fast 404 (~0.2s) and falls through to the DB.
-- Use `{ exact: true }` with `getByText` when matching result badge text ("Win", "Draw") to avoid also matching `<option>` text ("Wins", "Draws").
+## Security
 
-### Shared Page Pattern (`usePage`)
-
-`e2e/setup.ts` exports `setupPlaywright()` which returns a `usePage(path, opts?)` helper. Each `describe` block calls `usePage` to get a shared page that navigates once, then optionally resets between tests:
-
-```ts
-describe("move navigation", () => {
-  const { getPage } = usePage("/analysis/e2e_game_1", {
-    reset: async (page) => {
-      await page.keyboard.press("Home");
-      await page.getByText(/^0 \/ \d+$/).waitFor({ state: "visible" });
-    },
-  });
-
-  test("forward button works", async () => {
-    const page = getPage();
-    // page is already on /analysis/e2e_game_1, reset to move 0
-    await page.locator("button").filter({ hasText: "\u203A" }).click();
-    await page.getByText("1 / 7").waitFor({ state: "visible" });
-  });
-});
-```
-
-- **Do not create a new page per test.** Full `page.goto()` costs ~500ms; a keyboard reset costs ~45ms.
-- Read-only describes (no state mutation) can omit the `reset` option.
-- If a single test within a describe needs a different URL, call `page.goto()` in that test body rather than splitting the describe (acceptable for the last test in a block).
-
-### Game Route Data Flow
-
-`GET /api/games?username=X` → calls Chess.com API first (fetch + upsert) → then queries `SELECT ... FROM games WHERE username = ?`. The Chess.com call is **not skippable** — it always runs before the DB read. Tests tolerate this because nonexistent usernames fail fast (404).
+- **Rate limiting**: 60 req/min general, 5 req/min for `/api/analyze/*`
+- **CORS**: Development only. Production is same-origin.
+- **SSRF protection**: Archive URLs validated to start with `https://api.chess.com/`.
+- **Security headers**: `hono/secure-headers` adds standard hardening headers.

@@ -83,7 +83,7 @@ An async generator that yields one result per position. This design enables stre
 
 ### Stockfish Path
 
-Resolved from `STOCKFISH_PATH` env var, falling back to `$HOME/bin/stockfish-bin`, `$HOME/.local/bin/stockfish`, then bare `"stockfish"` (relies on `$PATH`).
+Resolved in order: `STOCKFISH_PATH` env var → `$HOME/bin/stockfish-bin` → `$HOME/.local/bin/stockfish` → bare `"stockfish"` (relies on `$PATH`).
 
 ### Concurrency Limiting
 

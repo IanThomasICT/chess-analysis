@@ -2,9 +2,9 @@
 
 ## Chess.com API Client
 
-File: `app/lib/chesscom.server.ts`
+File: `server/lib/chesscom.ts`
 
-All requests are server-side only (`.server.ts` suffix) to avoid CORS. The Chess.com Published Data API is fully public and requires no authentication.
+All requests are server-side only to avoid CORS. The Chess.com Published Data API is fully public and requires no authentication.
 
 ### Functions
 
@@ -48,20 +48,20 @@ The `username` query parameter is validated against `/^[a-zA-Z0-9_-]{1,50}$/` in
 
 ### Result Mapping
 
-Chess.com uses result strings like `"win"`, `"resigned"`, `"timeout"`, etc. The loader normalizes these to standard notation:
+Chess.com uses result strings like `"win"`, `"resigned"`, `"timeout"`, etc. The server normalizes these to standard notation:
 - White's `result === "win"` -> `"1-0"`
 - Black's `result === "win"` -> `"0-1"`
 - Otherwise -> `"1/2-1/2"`
 
-## Home Route
+## Home Page
 
-File: `app/routes/home.tsx`
+File: `client/src/pages/Home.tsx`
 
-### Loader
+### Data Loading
 
-The server loader:
-1. Reads `?username=` from the URL search params
-2. If a username is present, fetches the last 3 months from Chess.com
+The page uses TanStack Query (`useQuery`) to fetch games via `fetchGames(username)` from `client/src/api.ts`. The server handler:
+1. Reads `?username=` from the URL query params
+2. Fetches the last 3 months from Chess.com
 3. Upserts all games into the `games` table (using `INSERT OR REPLACE`)
 4. If the Chess.com fetch fails, falls through to load from the DB cache
 5. Returns all games for the username, sorted by `end_time DESC`
@@ -84,7 +84,7 @@ A count badge shows the number of filtered results.
 
 ## GameCard Component
 
-File: `app/components/GameCard.tsx`
+File: `client/src/components/GameCard.tsx`
 
 Each card is a `<Link>` to `/analysis/:gameId` and displays:
 - Result badge (Win/Loss/Draw) color-coded green/red/gray

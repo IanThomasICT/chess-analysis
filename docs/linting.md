@@ -38,13 +38,13 @@ The `consistent-type-imports` rule enforces `separate-type-imports`:
 
 ```ts
 // Correct
-import type { Route } from "./+types/home";
+import type { GameRow } from "../api";
 
-// Wrong (breaks Vite build for virtual +types modules)
-import { type Route } from "./+types/home";
+// Wrong
+import { type GameRow } from "../api";
 ```
 
-This is required because Rollup does not elide `import { type X }` statements during bundling, but does elide `import type { X }`. The React Router `+types` virtual modules only exist during type-checking and cannot be resolved at build time.
+Combined with `verbatimModuleSyntax: true` in both tsconfigs, `import type` is required for all type-only imports. The TypeScript compiler will error if a type-only import does not use the `import type` syntax.
 
 ### React Rules (client only)
 
@@ -77,14 +77,23 @@ Scoped to `client/src/**/*.{ts,tsx}` via two plugins:
 
 ## TypeScript Configuration
 
-File: `tsconfig.json`
+Root file: `tsconfig.json` (project references to `client/` and `server/`)
 
-Key settings:
+### Client (`client/tsconfig.json`)
+
+- `lib: ["DOM", "DOM.Iterable", "ES2022"]`
+- `types: ["vite/client"]` — Vite's `import.meta.env` types
+- `jsx: "react-jsx"`
+- `paths: { "~/*": ["./src/*"] }` — path alias (defined but not used in practice)
+- `verbatimModuleSyntax: true`
 - `strict: true`
-- `types: ["bun", "vite/client"]` -- Bun globals + Vite's `import.meta.env`
-- `verbatimModuleSyntax: true` -- type-only imports are required to use `import type`
-- `skipLibCheck: true` -- avoids errors in third-party `.d.ts` files
-- `rootDirs: [".", "./.react-router/types"]` -- merges generated route types
+
+### Server (`server/tsconfig.json`)
+
+- `lib: ["ES2022"]` — no DOM types
+- `types: ["bun"]` — Bun globals (`Bun.spawn`, `bun:sqlite`, etc.)
+- `verbatimModuleSyntax: true`
+- `strict: true`
 
 ## Running Checks
 
@@ -92,11 +101,14 @@ Key settings:
 # Lint only
 bun run lint
 
-# Full check (typegen + tsc + eslint)
+# Full check (tsc -b + eslint)
 bun run typecheck
 
 # Build (also catches import resolution errors)
 bun run build
+
+# All three combined (run after every change)
+bun run validate
 ```
 
 ## Common Patterns

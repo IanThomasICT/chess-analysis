@@ -1,80 +1,57 @@
 # Routing
 
-## Route Configuration
+## Client-Side Routing
 
-File: `app/routes.ts`
+File: `client/src/App.tsx`
 
-```ts
-export default [
-  index("routes/home.tsx"),
-  route("analysis/:gameId", "routes/analysis.$gameId.tsx"),
-  route("api/analyze/:gameId", "routes/api.analyze.$gameId.ts"),
-] satisfies RouteConfig;
-```
+The app uses **react-router v7 in library mode** (CSR, not framework mode). Routes are defined with JSX `<Route>` elements inside a `<BrowserRouter>`:
 
-| URL Pattern | File | Purpose |
+| URL Pattern | Component | Purpose |
 |---|---|---|
-| `/` | `routes/home.tsx` | Game gallery (index route) |
-| `/analysis/:gameId` | `routes/analysis.$gameId.tsx` | Analysis view |
-| `/api/analyze/:gameId` | `routes/api.analyze.$gameId.ts` | SSE analysis stream |
+| `/` | `Home` | Game gallery (index route) |
+| `/analysis/:gameId` | `Analysis` | Analysis view |
 
-## Route Type Generation
+There is no server-side rendering. The Vite SPA handles all routing client-side.
 
-React Router v7 generates type-safe route types via `react-router typegen`. Generated files live in `.react-router/types/` (gitignored).
+## API Routes (Server)
 
-Each route file imports its generated types:
+File: `server/routes/games.ts`, `server/routes/analyze.ts`
 
-```ts
-import type { Route } from "./+types/analysis.$gameId";
-```
+API routes are registered as Hono sub-routers mounted on `/api`:
 
-**Critical**: These must use `import type { ... }` (top-level type-only import), **not** `import { type ... }` (inline type import). The Vite/Rollup bundler cannot resolve the virtual `+types` module paths for non-type-only imports. The ESLint config enforces `separate-type-imports` style for this reason.
+| Endpoint | Handler | Purpose |
+|---|---|---|
+| `GET /api/games?username=X` | `games.ts` | Fetch + cache games from Chess.com |
+| `GET /api/games/:gameId` | `games.ts` | Load single game with FENs, moves, analysis |
+| `GET /api/analyze/:gameId` | `analyze.ts` | SSE Stockfish analysis stream |
 
-The `typecheck` script runs typegen before `tsc`:
+## Data Loading
 
-```json
-"typecheck": "react-router typegen && tsc && eslint app/"
-```
+The client uses **TanStack Query** (`useQuery`) for data fetching, not React Router loaders.
 
-## Loaders
+### Home page (`Home.tsx`)
 
-### `home.tsx` loader (async)
-
-- Reads `?username=` from search params
-- Fetches games from Chess.com API (server-side)
-- Upserts into SQLite
+- `useQuery` calls `fetchGames(username)` from `client/src/api.ts`
+- The API handler fetches from Chess.com first (fetch + upsert), then queries the DB
 - Returns `{ games: GameRow[], username: string | null }`
 
-### `analysis.$gameId.tsx` loader (sync)
+### Analysis page (`Analysis.tsx`)
 
-- Looks up game by ID in SQLite
-- Parses PGN -> FENs and moves
-- Checks analysis cache
-- Returns game metadata, FENs, moves, analysis, and analyzed flag
+- `useQuery` calls `fetchGame(gameId)` from `client/src/api.ts`
+- The API handler loads the game from SQLite, parses PGN → FENs and moves, checks analysis cache
+- Returns `{ game, fens, moves, analysis, analyzed }`
+- When `analyzed === false`, a `useEffect` automatically opens an SSE `EventSource` to stream analysis results
 
-### `api.analyze.$gameId.ts` loader (sync, returns Response)
+### SSE analysis stream (`analyze.ts`)
 
-- Looks up game, parses PGN
-- Returns a `ReadableStream` wrapped in a `Response` with SSE headers
-- The stream iterates the `analyzeGame()` async generator internally
+- Returns `Content-Type: text/event-stream`
+- Iterates the `analyzeGame()` async generator, sending per-position results
+- Completion: `{ done: true }`, Error: `{ error: "Analysis failed" }`
 
-## React Router Config
+## Dev Proxy
 
-File: `react-router.config.ts`
+In development, Vite on `:5173` proxies `/api/*` requests to the Hono server on `:3001` (configured in `client/vite.config.ts`). Both servers must be running for the app to work (`bun run dev` starts both via `concurrently`).
 
-```ts
-export default { ssr: true } satisfies Config;
-```
+## Production
 
-SSR is enabled (default). The app uses `@react-router/serve` for the production server.
-
-## Server vs Client Boundaries
-
-Files with `.server.ts` suffix are server-only and never bundled into the client. This includes:
-- `app/lib/db.server.ts` (Bun SQLite)
-- `app/lib/chesscom.server.ts` (fetch calls)
-- `app/lib/stockfish.server.ts` (subprocess)
-
-Files without the `.server` suffix (`app/lib/pgn.ts`) can be used on both server and client, though in practice `chess.js` is only used in loaders.
-
-Components in `app/components/` are client-side React components. They receive data from loaders via `useLoaderData`.
+In production, Hono serves the built SPA from `build/client/` as static files alongside the API on a single port. The SPA's `index.html` is served as a fallback for all non-API routes to support client-side routing.
