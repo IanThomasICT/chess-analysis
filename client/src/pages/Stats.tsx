@@ -8,12 +8,13 @@ import {
   fetchAclTrend,
   fetchByTimeOfDay,
   fetchMotifStats,
+  fetchDrillProgress,
   type WinRateSliceType,
 } from "../api";
 import { EloTrendChart } from "../components/EloTrendChart";
 import { AclTrendChart } from "../components/AclTrendChart";
 
-type Tab = "by-side" | "time-class" | "opening" | "rating" | "elo-trend" | "acl-trend" | "time-of-day" | "motifs";
+type Tab = "by-side" | "time-class" | "opening" | "rating" | "elo-trend" | "acl-trend" | "time-of-day" | "motifs" | "drill";
 
 const TAB_LABELS: Record<Tab, string> = {
   "by-side": "By Side",
@@ -24,6 +25,7 @@ const TAB_LABELS: Record<Tab, string> = {
   "acl-trend": "ACL Trend",
   "time-of-day": "Time of Day",
   "motifs": "Motifs",
+  "drill": "Drill",
 };
 
 const ALL_TABS = Object.keys(TAB_LABELS) as Tab[];
@@ -86,6 +88,7 @@ export function Stats() {
           {tab === "acl-trend" && <AclTrendTab username={username} />}
           {tab === "time-of-day" && <TimeOfDayTab username={username} />}
           {tab === "motifs" && <MotifsTab username={username} />}
+          {tab === "drill" && <DrillTab username={username} />}
         </div>
       </main>
     </div>
@@ -427,6 +430,40 @@ function MotifsTab({ username }: MotifsTabProps) {
           </Link>
         </div>
       ))}
+    </div>
+  );
+}
+
+// ---- Drill progress ----
+
+interface DrillTabProps {
+  username: string;
+}
+
+function Stat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="p-3 rounded border border-gray-200 dark:border-gray-700">
+      <div className="text-xs text-gray-500 uppercase">{label}</div>
+      <div className="text-2xl font-bold text-gray-900 dark:text-white">{value}</div>
+    </div>
+  );
+}
+
+function DrillTab({ username }: DrillTabProps) {
+  const { data, isPending, isError } = useQuery({
+    queryKey: ["stats", "drill-progress", username],
+    queryFn: async () => fetchDrillProgress(username),
+  });
+
+  if (isPending) {return <p className="text-gray-500">Loading&hellip;</p>;}
+  if (isError) {return <p className="text-red-500">Error.</p>;}
+
+  return (
+    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <Stat label="Attempts" value={String(data.total_attempts)} />
+      <Stat label="Accuracy" value={`${String(Math.round(data.accuracy_pct))}%`} />
+      <Stat label="Due today" value={String(data.due_today)} />
+      <Stat label="Streak" value={`${String(data.current_streak)} d`} />
     </div>
   );
 }

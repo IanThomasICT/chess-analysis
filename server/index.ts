@@ -6,6 +6,7 @@ import games from "./routes/games";
 import analyze from "./routes/analyze";
 import stats from "./routes/stats";
 import positions from "./routes/positions";
+import drill from "./routes/drill";
 import { rateLimit } from "./lib/rate-limit";
 import { backfillGameHeaders, backfillAnalysisFenKeys, backfillMotifs } from "./lib/backfill";
 import { loadOpenings } from "./lib/openings";
@@ -43,6 +44,7 @@ app.route("/api", games);
 app.route("/api", analyze);
 app.route("/api", stats);
 app.route("/api", positions);
+app.route("/api", drill);
 
 // Global error handler — never leak internal details to clients
 app.onError((err, c) => {

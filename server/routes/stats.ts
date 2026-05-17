@@ -529,4 +529,99 @@ stats.get("/stats/:username/motifs", (c) => {
   return c.json(computeMotifStats(db, username, from, to));
 });
 
+// ---------------------------------------------------------------------------
+// Drill progress
+// ---------------------------------------------------------------------------
+
+export interface DrillProgress {
+  total_attempts: number;
+  accuracy_pct: number;
+  due_today: number;
+  current_streak: number;
+}
+
+interface AttemptCounts {
+  total: number;
+  correct: number | null;
+}
+
+interface DueRow {
+  count: number;
+}
+
+interface AttemptDay {
+  attempted_at: number;
+}
+
+/**
+ * Computes drill progress stats for a user:
+ * - total_attempts: total rows in drill_attempts with attempted_at IS NOT NULL
+ * - accuracy_pct: percentage of correct attempts (0..100)
+ * - due_today: count of cards with due <= end of today (local time)
+ * - current_streak: consecutive days (local timezone) with >= 1 correct attempt, ending today
+ */
+export function computeDrillProgress(database: Database, username: string): DrillProgress {
+  const lower = username.toLowerCase();
+
+  const counts = database
+    .prepare(`
+      SELECT COUNT(*) AS total, SUM(COALESCE(correct, 0)) AS correct
+        FROM drill_attempts
+       WHERE lower(username) = ? AND attempted_at IS NOT NULL
+    `)
+    .get(lower) as AttemptCounts;
+
+  const total = counts.total;
+  const correct = counts.correct ?? 0;
+
+  const endOfToday = Math.floor(new Date().setHours(23, 59, 59, 999) / 1000);
+  const due = database
+    .prepare(`
+      SELECT COUNT(*) AS count FROM drill_attempts
+       WHERE lower(username) = ? AND due IS NOT NULL AND due <= ?
+    `)
+    .get(lower, endOfToday) as DueRow;
+
+  // Pull distinct days (local) where the user had >= 1 correct attempt.
+  const correctDays = database
+    .prepare(`
+      SELECT attempted_at FROM drill_attempts
+       WHERE lower(username) = ? AND correct = 1 AND attempted_at IS NOT NULL
+       ORDER BY attempted_at DESC
+       LIMIT 365
+    `)
+    .all(lower) as AttemptDay[];
+
+  // Convert each timestamp to a local day key and walk backward from today.
+  const dayKeys = new Set<string>();
+  for (const r of correctDays) {
+    const d = new Date(r.attempted_at * 1000);
+    const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+    dayKeys.add(key);
+  }
+  let streak = 0;
+  const cursor = new Date();
+  for (;;) {
+    const key = `${cursor.getFullYear()}-${cursor.getMonth()}-${cursor.getDate()}`;
+    if (!dayKeys.has(key)) {break;}
+    streak += 1;
+    cursor.setDate(cursor.getDate() - 1);
+  }
+
+  return {
+    total_attempts: total,
+    accuracy_pct: total > 0 ? (correct / total) * 100 : 0,
+    due_today: due.count,
+    current_streak: streak,
+  };
+}
+
+stats.get("/stats/:username/drill-progress", (c) => {
+  const username = c.req.param("username");
+  if (!USERNAME_PATTERN.test(username)) {
+    return c.json({ error: "Invalid username format" }, 400);
+  }
+  return c.json(computeDrillProgress(db, username));
+});
+
 export default stats;

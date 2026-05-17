@@ -214,6 +214,25 @@ Motif tags attached to user blunders and mistakes. Composite PK `(game_id, move_
 
 Index: `idx_blunder_tags_tag` on `tag`. Detection capped at 3 tags per position by priority.
 
+### `drill_attempts`
+
+Spaced-repetition state per (user, position). One row per position the user has drilled; `INSERT … ON CONFLICT DO UPDATE` keeps FSRS state in sync.
+
+| Column | Type | Description |
+|---|---|---|
+| `id` | INTEGER PK AUTOINCREMENT | row id |
+| `username` | TEXT NOT NULL | drilling user (lowercased on write) |
+| `game_id` | TEXT NOT NULL | source game |
+| `move_index` | INTEGER NOT NULL | after-position index (matches `blunder_tags`) |
+| `fen` | TEXT NOT NULL | FEN of the position to find the best move from (the BEFORE position) |
+| `best_move` | TEXT NOT NULL | engine's best move (UCI) |
+| `attempted_move` | TEXT | last attempted move (UCI) |
+| `correct` | INTEGER | 0/1 of last attempt |
+| `attempted_at` | INTEGER | unix epoch (last attempt) |
+| `stability` / `difficulty` / `due` / `state` | REAL / REAL / INTEGER / INTEGER | FSRS state (ts-fsrs default parameters) |
+
+Constraints: `UNIQUE (username, game_id, move_index)`. Index: `idx_drill_due` on `(username, due)`.
+
 ### `annotations`
 
 Manual notes layered onto Elo trend / stats views. CRUD endpoints deferred — render-only for Phase 2.
@@ -243,7 +262,8 @@ client/
     pages/
       Home.tsx             # Game gallery (index route)
       Analysis.tsx         # Analysis view
-      Stats.tsx            # Tabbed dashboards (by-side / opening / rating / elo trend / time-of-day)
+      Stats.tsx            # Tabbed dashboards (by-side / opening / rating / elo trend / time-of-day / motifs / drill)
+      Drill.tsx            # Spaced-repetition drill mode (interactive board)
     components/
       ChessBoard.tsx       # Chessground wrapper (React.memo)
       EvalBar.tsx          # Vertical evaluation bar (React.memo)
@@ -264,6 +284,7 @@ server/
     analyze.ts             # GET /api/analyze/:gameId (SSE stream; invalidates game_metrics)
     stats.ts               # /api/stats/:user/{by-side,win-rate,elo-trend,by-time-of-day}
     positions.ts           # GET /api/positions/history?fen=&username= (recurrence)
+    drill.ts               # /api/drill/{queue, attempt} — FSRS spaced repetition
   data/
     openings/{a..e}.tsv    # lichess-org/chess-openings (CC0)
   lib/

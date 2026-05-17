@@ -286,3 +286,70 @@ export async function fetchWinRateSlice(
   }
   return r.json() as Promise<WinRateSliceRow[]>;
 }
+
+export interface DrillCard {
+  game_id: string;
+  move_index: number;
+  fen: string;
+  best_move: string;
+  motifs: string[];
+  source: "due" | "new";
+}
+
+export async function fetchDrillQueue(
+  username: string,
+  limit = 20,
+): Promise<DrillCard[]> {
+  const r = await fetch(
+    `/api/drill/queue?username=${encodeURIComponent(username)}&limit=${String(limit)}`,
+  );
+  if (!r.ok) {
+    throw new Error("Failed to fetch drill queue");
+  }
+  return r.json() as Promise<DrillCard[]>;
+}
+
+export interface AttemptRequest {
+  username: string;
+  game_id: string;
+  move_index: number;
+  attempted_move: string;
+  elapsed_ms?: number;
+}
+
+export interface AttemptResponse {
+  correct: boolean;
+  best_move: string;
+  next_due: number;
+  state: number;
+  motifs: string[];
+}
+
+export async function submitDrillAttempt(
+  req: AttemptRequest,
+): Promise<AttemptResponse> {
+  const r = await fetch("/api/drill/attempt", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(req),
+  });
+  if (!r.ok) {
+    throw new Error("Failed to submit drill attempt");
+  }
+  return r.json() as Promise<AttemptResponse>;
+}
+
+export interface DrillProgress {
+  total_attempts: number;
+  accuracy_pct: number;
+  due_today: number;
+  current_streak: number;
+}
+
+export async function fetchDrillProgress(username: string): Promise<DrillProgress> {
+  const r = await fetch(`/api/stats/${encodeURIComponent(username)}/drill-progress`);
+  if (!r.ok) {
+    throw new Error("Failed to fetch drill progress");
+  }
+  return r.json() as Promise<DrillProgress>;
+}

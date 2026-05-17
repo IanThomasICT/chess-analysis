@@ -184,6 +184,31 @@ export const migrations: Migration[] = [
       database.run("CREATE INDEX IF NOT EXISTS idx_blunder_tags_tag ON blunder_tags(tag)");
     },
   },
+  {
+    // Migration #9 — drill_attempts table for spaced-repetition drilling (P6.2)
+    id: 9,
+    up: (database: Database) => {
+      database.run(`
+        CREATE TABLE IF NOT EXISTS drill_attempts (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          username TEXT NOT NULL,
+          game_id TEXT NOT NULL,
+          move_index INTEGER NOT NULL,
+          fen TEXT NOT NULL,
+          best_move TEXT NOT NULL,
+          attempted_move TEXT,
+          correct INTEGER,
+          attempted_at INTEGER,
+          stability REAL,
+          difficulty REAL,
+          due INTEGER,
+          state INTEGER,
+          UNIQUE (username, game_id, move_index)
+        )
+      `);
+      database.run("CREATE INDEX IF NOT EXISTS idx_drill_due ON drill_attempts(username, due)");
+    },
+  },
 ];
 
 export function runMigrations(database: Database): void {

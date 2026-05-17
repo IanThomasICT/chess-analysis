@@ -142,12 +142,20 @@ export function Home() {
             Chess Analyzer
           </h1>
           {usernameParam !== "" && (
-            <Link
-              to={`/stats?username=${encodeURIComponent(usernameParam)}`}
-              className="px-3 py-1.5 text-sm font-medium rounded-md bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600"
-            >
-              Stats &rarr;
-            </Link>
+            <div className="flex items-center gap-2">
+              <Link
+                to={`/stats?username=${encodeURIComponent(usernameParam)}`}
+                className="px-3 py-1.5 text-sm font-medium rounded-md bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600"
+              >
+                Stats &rarr;
+              </Link>
+              <Link
+                to={`/drill?username=${encodeURIComponent(usernameParam)}`}
+                className="px-3 py-1.5 text-sm font-medium rounded-md bg-purple-100 dark:bg-purple-900 text-purple-700 dark:text-purple-300 hover:bg-purple-200 dark:hover:bg-purple-800"
+              >
+                Drill &rarr;
+              </Link>
+            </div>
           )}
           <form onSubmit={handleSubmit} className="flex gap-2">
             <input

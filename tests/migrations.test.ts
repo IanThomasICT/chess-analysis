@@ -174,6 +174,26 @@ describe("migration runner", () => {
     expect(tables).toHaveLength(1);
   });
 
+  test("migration #9 creates drill_attempts table with unique constraint", () => {
+    const db = makeDb();
+    // Bootstrap minimal schema
+    db.run(`CREATE TABLE IF NOT EXISTS games (id TEXT PRIMARY KEY, username TEXT NOT NULL, pgn TEXT NOT NULL, white TEXT, black TEXT, result TEXT, time_class TEXT, end_time INTEGER, created_at INTEGER DEFAULT (unixepoch()))`);
+    db.run(`CREATE TABLE IF NOT EXISTS analysis (game_id TEXT NOT NULL, move_index INTEGER NOT NULL, fen TEXT NOT NULL, move_san TEXT, score_cp INTEGER, score_mate INTEGER, best_move TEXT, depth INTEGER, PRIMARY KEY (game_id, move_index), FOREIGN KEY (game_id) REFERENCES games(id))`);
+    runMigrations(db);
+
+    // Insert a drill_attempts row
+    db.prepare(
+      `INSERT INTO drill_attempts (username, game_id, move_index, fen, best_move) VALUES (?, ?, ?, ?, ?)`,
+    ).run("alice", "g1", 5, "fen-here", "e2e4");
+
+    // Re-inserting the same (username, game_id, move_index) should violate UNIQUE
+    expect(() => {
+      db.prepare(
+        `INSERT INTO drill_attempts (username, game_id, move_index, fen, best_move) VALUES (?, ?, ?, ?, ?)`,
+      ).run("alice", "g1", 5, "fen-here", "e2e4");
+    }).toThrow();
+  });
+
   test("migration #7 preserves existing analysis rows with multipv_rank=1", () => {
     // Bootstrap old schema (pre-migration #7), apply migrations 1-6, insert rows,
     // then apply migration #7 and verify rows survive with multipv_rank=1.

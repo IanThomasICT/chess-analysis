@@ -1,7 +1,7 @@
 import { describe, expect, test, beforeEach } from "bun:test";
 import { Database } from "bun:sqlite";
 import { migrations, type Migration } from "../server/lib/db";
-import { computeBySide, computeEloTrend, computeByTimeOfDay, computeWinRateSlice, computeAclTrend, computeMotifStats } from "../server/routes/stats";
+import { computeBySide, computeEloTrend, computeByTimeOfDay, computeWinRateSlice, computeAclTrend, computeMotifStats, computeDrillProgress } from "../server/routes/stats";
 
 // ---------------------------------------------------------------------------
 // Schema helpers — apply migrations 1-4 to an in-memory DB
@@ -741,5 +741,97 @@ describe("computeMotifStats", () => {
 
     const result = computeMotifStats(db, "nobody");
     expect(result).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// computeDrillProgress
+// ---------------------------------------------------------------------------
+
+function insertDrillAttempt(
+  database: Database,
+  username: string,
+  gameId: string,
+  moveIndex: number,
+  correct: number | null,
+  attemptedAt: number | null,
+  due: number | null = null,
+): void {
+  database
+    .prepare(
+      `INSERT INTO drill_attempts
+         (username, game_id, move_index, fen, best_move, correct, attempted_at, due)
+       VALUES (?, ?, ?, '', 'e2e4', ?, ?, ?)`,
+    )
+    .run(username, gameId, moveIndex, correct, attemptedAt, due);
+}
+
+describe("computeDrillProgress", () => {
+  test("no attempts → all zeros", () => {
+    const result = computeDrillProgress(db, "alice");
+
+    expect(result.total_attempts).toBe(0);
+    expect(result.accuracy_pct).toBe(0);
+    expect(result.due_today).toBe(0);
+    expect(result.current_streak).toBe(0);
+  });
+
+  test("5 attempts, 3 correct → total=5, accuracy_pct=60", () => {
+    const now = Math.floor(Date.now() / 1000);
+    insertDrillAttempt(db, "alice", "g1", 1, 1, now);
+    insertDrillAttempt(db, "alice", "g1", 2, 1, now);
+    insertDrillAttempt(db, "alice", "g1", 3, 1, now);
+    insertDrillAttempt(db, "alice", "g1", 4, 0, now);
+    insertDrillAttempt(db, "alice", "g1", 5, 0, now);
+
+    const result = computeDrillProgress(db, "alice");
+
+    expect(result.total_attempts).toBe(5);
+    expect(result.accuracy_pct).toBeCloseTo(60, 5);
+  });
+
+  test("future due timestamp is not counted in due_today", () => {
+    const farFuture = Math.floor(Date.now() / 1000) + 86400 * 365; // 1 year ahead
+    const now = Math.floor(Date.now() / 1000);
+    // one card due in the past (should count), one in the future (should not)
+    insertDrillAttempt(db, "alice", "g1", 1, 1, now, now - 3600);
+    insertDrillAttempt(db, "alice", "g1", 2, 1, now, farFuture);
+
+    const result = computeDrillProgress(db, "alice");
+
+    expect(result.due_today).toBe(1);
+  });
+
+  test("streak: 3 consecutive days with >= 1 correct attempt → streak=3", () => {
+    // Build timestamps for 3 consecutive days ending today (local time, noon each day)
+    const today = new Date();
+    today.setHours(12, 0, 0, 0);
+    const t0 = Math.floor(today.getTime() / 1000);
+    const t1 = t0 - 86400;
+    const t2 = t0 - 86400 * 2;
+
+    insertDrillAttempt(db, "alice", "g1", 1, 1, t0);
+    insertDrillAttempt(db, "alice", "g1", 2, 1, t1);
+    insertDrillAttempt(db, "alice", "g1", 3, 1, t2);
+
+    const result = computeDrillProgress(db, "alice");
+
+    expect(result.current_streak).toBe(3);
+  });
+
+  test("gap in streak → streak resets to only consecutive days from today", () => {
+    // today and 2 days ago correct, but yesterday (1 day ago) has no correct attempt → gap
+    const today = new Date();
+    today.setHours(12, 0, 0, 0);
+    const t0 = Math.floor(today.getTime() / 1000);
+    const t2 = t0 - 86400 * 2; // two days ago
+
+    insertDrillAttempt(db, "alice", "g1", 1, 1, t0);
+    insertDrillAttempt(db, "alice", "g1", 2, 1, t2);
+
+    const result = computeDrillProgress(db, "alice");
+
+    // Streak should only be 1 (today), not 2, because yesterday is missing
+    expect(result.current_streak).toBe(1);
   });
 });
