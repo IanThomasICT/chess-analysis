@@ -141,22 +141,30 @@ export function Home() {
           <h1 className="text-xl font-bold text-gray-900 dark:text-white">
             Chess Analyzer
           </h1>
-          {usernameParam !== "" && (
-            <div className="flex items-center gap-2">
-              <Link
-                to={`/stats?username=${encodeURIComponent(usernameParam)}`}
-                className="px-3 py-1.5 text-sm font-medium rounded-md bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600"
-              >
-                Stats &rarr;
-              </Link>
-              <Link
-                to={`/drill?username=${encodeURIComponent(usernameParam)}`}
-                className="px-3 py-1.5 text-sm font-medium rounded-md bg-purple-100 dark:bg-purple-900 text-purple-700 dark:text-purple-300 hover:bg-purple-200 dark:hover:bg-purple-800"
-              >
-                Drill &rarr;
-              </Link>
-            </div>
-          )}
+          <div className="flex items-center gap-2">
+            {usernameParam !== "" && (
+              <>
+                <Link
+                  to={`/stats?username=${encodeURIComponent(usernameParam)}`}
+                  className="px-3 py-1.5 text-sm font-medium rounded-md bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600"
+                >
+                  Stats &rarr;
+                </Link>
+                <Link
+                  to={`/drill?username=${encodeURIComponent(usernameParam)}`}
+                  className="px-3 py-1.5 text-sm font-medium rounded-md bg-purple-100 dark:bg-purple-900 text-purple-700 dark:text-purple-300 hover:bg-purple-200 dark:hover:bg-purple-800"
+                >
+                  Drill &rarr;
+                </Link>
+              </>
+            )}
+            <Link
+              to="/study"
+              className="px-3 py-1.5 text-sm font-medium rounded-md bg-amber-100 dark:bg-amber-900 text-amber-800 dark:text-amber-200 hover:bg-amber-200 dark:hover:bg-amber-800"
+            >
+              Study &rarr;
+            </Link>
+          </div>
           <form onSubmit={handleSubmit} className="flex gap-2">
             <input
               key={usernameParam}

@@ -151,22 +151,22 @@ export interface EloTrendPoint {
   elo: number;
 }
 
-export interface AclTrendPoint {
+export interface AccuracyTrendPoint {
   t: number;
-  acl: number;
+  accuracy: number;
 }
 
-export async function fetchAclTrend(
+export async function fetchAccuracyTrend(
   username: string,
   timeClass: "bullet" | "blitz" | "rapid" | "daily",
-): Promise<AclTrendPoint[]> {
+): Promise<AccuracyTrendPoint[]> {
   const r = await fetch(
-    `/api/stats/${encodeURIComponent(username)}/acl-trend?time_class=${timeClass}`,
+    `/api/stats/${encodeURIComponent(username)}/accuracy-trend?time_class=${timeClass}`,
   );
   if (!r.ok) {
-    throw new Error("Failed to fetch ACL trend");
+    throw new Error("Failed to fetch accuracy trend");
   }
-  return r.json() as Promise<AclTrendPoint[]>;
+  return r.json() as Promise<AccuracyTrendPoint[]>;
 }
 
 export async function fetchEloTrend(

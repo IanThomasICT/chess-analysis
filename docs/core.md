@@ -262,8 +262,11 @@ client/
     pages/
       Home.tsx             # Game gallery (index route)
       Analysis.tsx         # Analysis view
-      Stats.tsx            # Tabbed dashboards (by-side / opening / rating / elo trend / time-of-day / motifs / drill)
+      Stats.tsx            # Tabbed dashboards (by-side / opening / rating / elo trend / accuracy trend / time-of-day / motifs / drill)
       Drill.tsx            # Spaced-repetition drill mode (interactive board)
+      Study.tsx            # /study glossary page (in-app terminology)
+    study/
+      glossary.ts          # Static glossary entries
     components/
       ChessBoard.tsx       # Chessground wrapper (React.memo)
       EvalBar.tsx          # Vertical evaluation bar (React.memo)
@@ -274,7 +277,7 @@ client/
       EloTrendChart.tsx    # uPlot line chart for /stats Elo trend tab
       RecurrencePanel.tsx  # Position-recurrence list on Analysis page
       AlternativesPanel.tsx # Top-3 engine PVs (deep-analysis mode)
-      AclTrendChart.tsx    # uPlot ACL trend on /stats page
+      AccuracyTrendChart.tsx # uPlot accuracy trend on /stats page
       GameCard.tsx         # Gallery card for a single game
 
 server/

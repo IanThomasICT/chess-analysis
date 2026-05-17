@@ -9,6 +9,11 @@ interface MoveListProps {
   motifs?: Record<string, string[]>;
 }
 
+/** Replace underscores with spaces so tooltips render "back rank mate" not "back_rank_mate". */
+function motifTitle(tags: string[]): string {
+  return tags.map((t) => t.replace(/_/g, " ")).join(", ");
+}
+
 export const MoveList = memo(function MoveList({
   moves,
   currentMove,
@@ -63,7 +68,10 @@ export const MoveList = memo(function MoveList({
               >
                 {pair.white.san}
                 {(motifs?.[String(pair.white.index)] ?? []).length > 0 && (
-                  <span className="ml-1 text-[10px] text-purple-600 dark:text-purple-300">
+                  <span
+                    className="ml-1 text-[10px] text-purple-600 dark:text-purple-300 cursor-help"
+                    title={motifTitle(motifs?.[String(pair.white.index)] ?? [])}
+                  >
                     {(motifs?.[String(pair.white.index)] ?? []).map((t) => t.charAt(0).toUpperCase()).join("")}
                   </span>
                 )}
@@ -81,7 +89,10 @@ export const MoveList = memo(function MoveList({
                 >
                   {blackPly.san}
                   {(motifs?.[String(blackPly.index)] ?? []).length > 0 && (
-                    <span className="ml-1 text-[10px] text-purple-600 dark:text-purple-300">
+                    <span
+                      className="ml-1 text-[10px] text-purple-600 dark:text-purple-300 cursor-help"
+                      title={motifTitle(motifs?.[String(blackPly.index)] ?? [])}
+                    >
                       {(motifs?.[String(blackPly.index)] ?? []).map((t) => t.charAt(0).toUpperCase()).join("")}
                     </span>
                   )}

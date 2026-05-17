@@ -1,15 +1,17 @@
 import { memo, useEffect, useRef } from "react";
 import uPlot from "uplot";
-import type { AclTrendPoint } from "../api";
+import type { AccuracyTrendPoint } from "../api";
 
 interface Props {
-  data: AclTrendPoint[];
+  data: AccuracyTrendPoint[];
 }
 
-export const AclTrendChart = memo(function AclTrendChart({ data }: Props) {
+export const AccuracyTrendChart = memo(function AccuracyTrendChart({
+  data,
+}: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<uPlot | null>(null);
-  const dataRef = useRef<AclTrendPoint[]>(data);
+  const dataRef = useRef<AccuracyTrendPoint[]>(data);
   dataRef.current = data;
 
   useEffect(() => {
@@ -25,7 +27,7 @@ export const AclTrendChart = memo(function AclTrendChart({ data }: Props) {
       const pts = dataRef.current;
       const aligned: uPlot.AlignedData = [
         pts.map((d) => d.t),
-        pts.map((d) => d.acl),
+        pts.map((d) => d.accuracy),
       ];
 
       if (chartRef.current === null) {
@@ -33,7 +35,11 @@ export const AclTrendChart = memo(function AclTrendChart({ data }: Props) {
           {
             width: w,
             height: h,
-            scales: { x: { time: true } },
+            scales: {
+              x: { time: true },
+              // Accuracy is 0–100 — pin Y so different time-classes compare visually
+              y: { range: [0, 100] },
+            },
             axes: [
               {
                 stroke: "#888",
@@ -42,7 +48,7 @@ export const AclTrendChart = memo(function AclTrendChart({ data }: Props) {
                 ticks: { show: false },
               },
               {
-                label: "ACL (cp)",
+                label: "Accuracy %",
                 stroke: "#888",
                 font: "10px system-ui, sans-serif",
                 size: 48,
@@ -52,7 +58,7 @@ export const AclTrendChart = memo(function AclTrendChart({ data }: Props) {
             ],
             series: [
               {},
-              { stroke: "#f59e0b", width: 2, points: { show: false } },
+              { stroke: "#22c55e", width: 2, points: { show: false } },
             ],
             legend: { show: false },
           },
@@ -78,7 +84,7 @@ export const AclTrendChart = memo(function AclTrendChart({ data }: Props) {
     if (chartRef.current === null) {return;}
     const aligned: uPlot.AlignedData = [
       data.map((d) => d.t),
-      data.map((d) => d.acl),
+      data.map((d) => d.accuracy),
     ];
     chartRef.current.setData(aligned);
   }, [data]);

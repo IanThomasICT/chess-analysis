@@ -142,48 +142,48 @@ stats.get("/stats/:username/elo-trend", (c) => {
 });
 
 // ---------------------------------------------------------------------------
-// ACL trend
+// Accuracy trend (per-game Lichess-style accuracy for the user's side)
 // ---------------------------------------------------------------------------
 
-export interface AclTrendPoint {
+export interface AccuracyTrendPoint {
   t: number;   // unix epoch seconds
-  acl: number;
+  accuracy: number;
 }
 
-interface AclTrendRow {
+interface AccuracyTrendRow {
   end_time: number;
-  acl_white: number;
-  acl_black: number;
+  accuracy_white: number;
+  accuracy_black: number;
   white: string;
 }
 
 /**
- * Returns ascending-time series of per-game ACL for the user's side
- * (white ACL if user played white, black ACL otherwise).
+ * Returns ascending-time series of per-game accuracy for the user's side
+ * (white accuracy if user played white, black accuracy otherwise).
  * Only games that have a matching game_metrics row are included.
  */
-export function computeAclTrend(
+export function computeAccuracyTrend(
   database: Database,
   username: string,
   timeClass: string,
-): AclTrendPoint[] {
+): AccuracyTrendPoint[] {
   const lower = username.toLowerCase();
   const rows = database
     .prepare(`
-      SELECT g.end_time, gm.acl_white, gm.acl_black, g.white
+      SELECT g.end_time, gm.accuracy_white, gm.accuracy_black, g.white
         FROM games g
         JOIN game_metrics gm ON g.id = gm.game_id
        WHERE lower(g.username) = ? AND g.time_class = ?
        ORDER BY g.end_time ASC
     `)
-    .all(lower, timeClass) as AclTrendRow[];
+    .all(lower, timeClass) as AccuracyTrendRow[];
   return rows.map((r) => ({
     t: r.end_time,
-    acl: r.white.toLowerCase() === lower ? r.acl_white : r.acl_black,
+    accuracy: r.white.toLowerCase() === lower ? r.accuracy_white : r.accuracy_black,
   }));
 }
 
-stats.get("/stats/:username/acl-trend", (c) => {
+stats.get("/stats/:username/accuracy-trend", (c) => {
   const username = c.req.param("username");
   const timeClass = c.req.query("time_class") ?? "blitz";
   if (!USERNAME_PATTERN.test(username)) {
@@ -192,7 +192,7 @@ stats.get("/stats/:username/acl-trend", (c) => {
   if (!TIME_CLASS_PATTERN.test(timeClass)) {
     return c.json({ error: "Invalid time_class" }, 400);
   }
-  return c.json(computeAclTrend(db, username, timeClass));
+  return c.json(computeAccuracyTrend(db, username, timeClass));
 });
 
 // ---------------------------------------------------------------------------

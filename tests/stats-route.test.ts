@@ -1,7 +1,7 @@
 import { describe, expect, test, beforeEach } from "bun:test";
 import { Database } from "bun:sqlite";
 import { migrations, type Migration } from "../server/lib/db";
-import { computeBySide, computeEloTrend, computeByTimeOfDay, computeWinRateSlice, computeAclTrend, computeMotifStats, computeDrillProgress } from "../server/routes/stats";
+import { computeBySide, computeEloTrend, computeByTimeOfDay, computeWinRateSlice, computeAccuracyTrend, computeMotifStats, computeDrillProgress } from "../server/routes/stats";
 
 // ---------------------------------------------------------------------------
 // Schema helpers — apply migrations 1-4 to an in-memory DB
@@ -593,10 +593,10 @@ describe("computeWinRateSlice — avg_accuracy", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Helper for ACL trend tests
+// Helper for accuracy trend tests
 // ---------------------------------------------------------------------------
 
-function insertGameWithAcl(
+function insertGameWithAccuracy(
   database: Database,
   id: string,
   username: string,
@@ -604,8 +604,8 @@ function insertGameWithAcl(
   black: string,
   timeClass: string,
   endTime: number,
-  aclWhite: number,
-  aclBlack: number,
+  accuracyWhite: number,
+  accuracyBlack: number,
 ): void {
   database
     .prepare(
@@ -620,53 +620,51 @@ function insertGameWithAcl(
           blunders_white, mistakes_white, inaccuracies_white,
           blunders_black, mistakes_black, inaccuracies_black,
           acl_white, acl_black, computed_at)
-       VALUES (?, 0, 0, 0, 0, 0, 0, 0, 0, ?, ?, 0)`,
+       VALUES (?, ?, ?, 0, 0, 0, 0, 0, 0, 0, 0, 0)`,
     )
-    .run(id, aclWhite, aclBlack);
+    .run(id, accuracyWhite, accuracyBlack);
 }
 
 // ---------------------------------------------------------------------------
-// computeAclTrend
+// computeAccuracyTrend
 // ---------------------------------------------------------------------------
 
-describe("computeAclTrend", () => {
-  test("returns 3 blitz points with correct user-side ACL (2 white, 1 black)", () => {
-    // g1: alice plays white → acl = acl_white = 30
-    insertGameWithAcl(db, "g1", "alice", "alice", "bob", "blitz", 1000, 30, 50);
-    // g2: alice plays black → acl = acl_black = 45
-    insertGameWithAcl(db, "g2", "alice", "bob", "alice", "blitz", 2000, 20, 45);
-    // g3: alice plays white → acl = acl_white = 10
-    insertGameWithAcl(db, "g3", "alice", "alice", "bob", "blitz", 3000, 10, 60);
+describe("computeAccuracyTrend", () => {
+  test("returns 3 blitz points with correct user-side accuracy (2 white, 1 black)", () => {
+    // g1: alice plays white → accuracy_white = 85
+    insertGameWithAccuracy(db, "g1", "alice", "alice", "bob", "blitz", 1000, 85, 60);
+    // g2: alice plays black → accuracy_black = 75
+    insertGameWithAccuracy(db, "g2", "alice", "bob", "alice", "blitz", 2000, 70, 75);
+    // g3: alice plays white → accuracy_white = 92
+    insertGameWithAccuracy(db, "g3", "alice", "alice", "bob", "blitz", 3000, 92, 50);
 
-    const result = computeAclTrend(db, "alice", "blitz");
+    const result = computeAccuracyTrend(db, "alice", "blitz");
 
     expect(result).toHaveLength(3);
-    expect(result[0]).toEqual({ t: 1000, acl: 30 });
-    expect(result[1]).toEqual({ t: 2000, acl: 45 });
-    expect(result[2]).toEqual({ t: 3000, acl: 10 });
+    expect(result[0]).toEqual({ t: 1000, accuracy: 85 });
+    expect(result[1]).toEqual({ t: 2000, accuracy: 75 });
+    expect(result[2]).toEqual({ t: 3000, accuracy: 92 });
   });
 
   test("games without game_metrics are excluded (JOIN not LEFT JOIN)", () => {
-    // game with metrics
-    insertGameWithAcl(db, "g1", "alice", "alice", "bob", "blitz", 1000, 25, 35);
-    // game without metrics
+    insertGameWithAccuracy(db, "g1", "alice", "alice", "bob", "blitz", 1000, 80, 65);
     db.prepare(
       `INSERT INTO games (id, username, pgn, white, black, result, time_class, end_time)
        VALUES (?, ?, '', ?, ?, '', ?, ?)`,
     ).run("g2", "alice", "alice", "bob", "blitz", 2000);
 
-    const result = computeAclTrend(db, "alice", "blitz");
+    const result = computeAccuracyTrend(db, "alice", "blitz");
 
     expect(result).toHaveLength(1);
     expect(result[0].t).toBe(1000);
   });
 
   test("time_class filter excludes games of other time classes", () => {
-    insertGameWithAcl(db, "g1", "alice", "alice", "bob", "blitz", 1000, 20, 30);
-    insertGameWithAcl(db, "g2", "alice", "alice", "bob", "rapid", 2000, 15, 25);
-    insertGameWithAcl(db, "g3", "alice", "alice", "bob", "blitz", 3000, 18, 28);
+    insertGameWithAccuracy(db, "g1", "alice", "alice", "bob", "blitz", 1000, 80, 70);
+    insertGameWithAccuracy(db, "g2", "alice", "alice", "bob", "rapid", 2000, 88, 75);
+    insertGameWithAccuracy(db, "g3", "alice", "alice", "bob", "blitz", 3000, 82, 72);
 
-    const result = computeAclTrend(db, "alice", "blitz");
+    const result = computeAccuracyTrend(db, "alice", "blitz");
 
     expect(result).toHaveLength(2);
     expect(result[0].t).toBe(1000);
@@ -674,9 +672,9 @@ describe("computeAclTrend", () => {
   });
 
   test("unknown user returns empty array", () => {
-    insertGameWithAcl(db, "g1", "alice", "alice", "bob", "blitz", 1000, 20, 30);
+    insertGameWithAccuracy(db, "g1", "alice", "alice", "bob", "blitz", 1000, 80, 70);
 
-    const result = computeAclTrend(db, "nobody", "blitz");
+    const result = computeAccuracyTrend(db, "nobody", "blitz");
 
     expect(result).toEqual([]);
   });

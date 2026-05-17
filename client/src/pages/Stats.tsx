@@ -5,16 +5,16 @@ import {
   fetchBySide,
   fetchWinRateSlice,
   fetchEloTrend,
-  fetchAclTrend,
+  fetchAccuracyTrend,
   fetchByTimeOfDay,
   fetchMotifStats,
   fetchDrillProgress,
   type WinRateSliceType,
 } from "../api";
 import { EloTrendChart } from "../components/EloTrendChart";
-import { AclTrendChart } from "../components/AclTrendChart";
+import { AccuracyTrendChart } from "../components/AccuracyTrendChart";
 
-type Tab = "by-side" | "time-class" | "opening" | "rating" | "elo-trend" | "acl-trend" | "time-of-day" | "motifs" | "drill";
+type Tab = "by-side" | "time-class" | "opening" | "rating" | "elo-trend" | "accuracy-trend" | "time-of-day" | "motifs" | "drill";
 
 const TAB_LABELS: Record<Tab, string> = {
   "by-side": "By Side",
@@ -22,7 +22,7 @@ const TAB_LABELS: Record<Tab, string> = {
   "opening": "By Opening",
   "rating": "By Rating",
   "elo-trend": "Elo Trend",
-  "acl-trend": "ACL Trend",
+  "accuracy-trend": "Accuracy Trend",
   "time-of-day": "Time of Day",
   "motifs": "Motifs",
   "drill": "Drill",
@@ -85,7 +85,7 @@ export function Stats() {
           {tab === "opening" && <SliceTab username={username} slice="opening" />}
           {tab === "rating" && <SliceTab username={username} slice="rating_bucket" />}
           {tab === "elo-trend" && <EloTrendTab username={username} />}
-          {tab === "acl-trend" && <AclTrendTab username={username} />}
+          {tab === "accuracy-trend" && <AccuracyTrendTab username={username} />}
           {tab === "time-of-day" && <TimeOfDayTab username={username} />}
           {tab === "motifs" && <MotifsTab username={username} />}
           {tab === "drill" && <DrillTab username={username} />}
@@ -258,20 +258,20 @@ function EloTrendTab({ username }: EloTrendTabProps) {
   );
 }
 
-// ---- ACL trend ----
+// ---- Accuracy trend ----
 
-const ACL_TIME_CLASSES = ["bullet", "blitz", "rapid", "daily"] as const;
-type AclTimeClass = (typeof ACL_TIME_CLASSES)[number];
+const ACCURACY_TIME_CLASSES = ["bullet", "blitz", "rapid", "daily"] as const;
+type AccuracyTimeClass = (typeof ACCURACY_TIME_CLASSES)[number];
 
-interface AclTrendTabProps {
+interface AccuracyTrendTabProps {
   username: string;
 }
 
-function AclTrendTab({ username }: AclTrendTabProps) {
-  const [tc, setTc] = useState<AclTimeClass>("blitz");
+function AccuracyTrendTab({ username }: AccuracyTrendTabProps) {
+  const [tc, setTc] = useState<AccuracyTimeClass>("blitz");
   const { data, isPending, isError } = useQuery({
-    queryKey: ["stats", "acl-trend", username, tc],
-    queryFn: async () => fetchAclTrend(username, tc),
+    queryKey: ["stats", "accuracy-trend", username, tc],
+    queryFn: async () => fetchAccuracyTrend(username, tc),
   });
 
   const hasData = data !== undefined && data.length > 0;
@@ -285,7 +285,7 @@ function AclTrendTab({ username }: AclTrendTabProps) {
   } else if (isEmpty) {
     body = <p className="text-gray-500">No data for {tc}.</p>;
   } else if (hasData) {
-    body = <AclTrendChart data={data} />;
+    body = <AccuracyTrendChart data={data} />;
   } else {
     body = null;
   }
@@ -293,14 +293,14 @@ function AclTrendTab({ username }: AclTrendTabProps) {
   return (
     <div>
       <div className="flex gap-2 mb-3">
-        {ACL_TIME_CLASSES.map((t) => (
+        {ACCURACY_TIME_CLASSES.map((t) => (
           <button
             key={t}
             type="button"
             onClick={() => { setTc(t); }}
             className={`px-3 py-1 rounded text-sm ${
               tc === t
-                ? "bg-amber-500 text-white"
+                ? "bg-green-600 text-white"
                 : "bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300"
             }`}
           >
