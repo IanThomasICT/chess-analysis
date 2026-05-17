@@ -72,7 +72,7 @@ export const EvalGraph = memo(function EvalGraph({
   // the container has non-zero dimensions (avoids 0×0 canvas on first paint).
   useEffect(() => {
     const container = containerRef.current;
-    if (container === null) return;
+    if (container === null) {return;}
 
     let chart: uPlot | null = null;
     let handleChartClick: (() => void) | null = null;
@@ -126,7 +126,7 @@ export const EvalGraph = memo(function EvalGraph({
             size: 34,
             gap: 4,
             values: (_self: uPlot, splits: number[]) =>
-              splits.map((v) => (v > 0 ? "+" + String(v) : String(v))),
+              splits.map((v) => (v > 0 ? `+${  String(v)}` : String(v))),
             grid: { stroke: "rgba(128,128,128,0.15)", width: 1 },
             ticks: { show: false },
           },
@@ -152,7 +152,7 @@ export const EvalGraph = memo(function EvalGraph({
               const zeroY = self.valToPos(0, "y", true);
               ctx.setLineDash([4 * pxRatio, 4 * pxRatio]);
               ctx.strokeStyle = "rgba(128,128,128,0.5)";
-              ctx.lineWidth = 1 * pxRatio;
+              ctx.lineWidth = pxRatio;
               ctx.beginPath();
               ctx.moveTo(bbox.left, zeroY);
               ctx.lineTo(bbox.left + bbox.width, zeroY);
@@ -190,7 +190,7 @@ export const EvalGraph = memo(function EvalGraph({
                   ctx.fillStyle = "#ffffff";
                   ctx.fill();
                   ctx.strokeStyle = "rgba(0,0,0,0.15)";
-                  ctx.lineWidth = 1 * pxRatio;
+                  ctx.lineWidth = pxRatio;
                   ctx.stroke();
                   // Inner fill
                   ctx.beginPath();
@@ -220,12 +220,12 @@ export const EvalGraph = memo(function EvalGraph({
               const cssLeft = self.valToPos(xVal, "x");
               const bboxLeftCss = self.bbox.left / devicePixelRatio;
               const evalStr =
-                yVal > 0 ? "+" + yVal.toFixed(2) : yVal.toFixed(2);
+                yVal > 0 ? `+${  yVal.toFixed(2)}` : yVal.toFixed(2);
 
               tooltip.textContent =
-                "Move " + String(xVal) + "  \u00b7  " + evalStr;
+                `Move ${  String(xVal)  }  \u00b7  ${  evalStr}`;
               tooltip.style.display = "block";
-              tooltip.style.left = String(bboxLeftCss + cssLeft) + "px";
+              tooltip.style.left = `${String(bboxLeftCss + cssLeft)  }px`;
               tooltip.style.top = "0px";
               tooltip.style.transform = "translateX(-50%)";
             },
@@ -240,7 +240,7 @@ export const EvalGraph = memo(function EvalGraph({
     const resizeObserver = new ResizeObserver((entries) => {
       for (const entry of entries) {
         const { width, height } = entry.contentRect;
-        if (width <= 0 || height <= 0) continue;
+        if (width <= 0 || height <= 0) {continue;}
 
         if (chart === null) {
           // First valid size — create the chart with the latest data from the ref.
@@ -252,9 +252,9 @@ export const EvalGraph = memo(function EvalGraph({
           chartRef.current = chart;
 
           handleChartClick = () => {
-            if (chart === null) return;
+            if (chart === null) {return;}
             const idx = chart.cursor.idx;
-            if (idx === null || idx === undefined) return;
+            if (idx === null || idx === undefined) {return;}
             const moveIndex = chart.data[0][idx];
             if (typeof moveIndex === "number") {
               onSelectMoveRef.current(moveIndex);

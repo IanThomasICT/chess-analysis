@@ -20,7 +20,7 @@ describe("real data smoke tests", () => {
 
   test("loads games for kidkasu", async () => {
     const page = getPage();
-    await page.goto(baseUrl + "/?username=kidkasu");
+    await page.goto(`${baseUrl  }/?username=kidkasu`);
     // Wait for game cards to appear (fetched from Chess.com API)
     await page.locator('a[href^="/analysis/"]').first().waitFor({
       state: "visible",
@@ -32,7 +32,7 @@ describe("real data smoke tests", () => {
 
   test("loads analysis page for game 164920702934", async () => {
     const page = getPage();
-    await page.goto(baseUrl + "/analysis/164920702934");
+    await page.goto(`${baseUrl  }/analysis/164920702934`);
     // Wait for board and player names to render
     await page.locator("cg-board").waitFor({ state: "visible", timeout: 15_000 });
     // Verify navigation controls are present

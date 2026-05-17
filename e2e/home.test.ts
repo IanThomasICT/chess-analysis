@@ -1,8 +1,9 @@
 import { describe, test, expect, beforeAll, afterAll } from "bun:test";
+import type { Page } from "playwright-core";
 import { setupPlaywright } from "./setup";
 import { seedTestDatabase, cleanTestDatabase } from "./fixtures";
 
-const { usePage, baseUrl } = setupPlaywright();
+const { usePage } = setupPlaywright();
 
 beforeAll(() => {
   seedTestDatabase();
@@ -13,7 +14,7 @@ afterAll(() => {
 });
 
 // Helper: reset all client-side filters to default state.
-async function resetFilters(page: import("playwright-core").Page) {
+async function resetFilters(page: Page) {
   await page.getByPlaceholder("Search by opponent...").clear();
   await page.locator("select").first().selectOption("all");
   await page.locator("select").nth(1).selectOption("all");

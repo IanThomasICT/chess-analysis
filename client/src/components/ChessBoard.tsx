@@ -20,7 +20,7 @@ export const ChessBoard = memo(function ChessBoard({ fen, orientation = "white",
   const apiRef = useRef<Api | null>(null);
 
   useEffect(() => {
-    if (boardRef.current === null) return;
+    if (boardRef.current === null) {return;}
     apiRef.current = Chessground(boardRef.current, {
       fen,
       lastMove,

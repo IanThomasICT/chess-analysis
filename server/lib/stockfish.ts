@@ -8,11 +8,11 @@ function resolveStockfishPath(): string {
   }
   if (process.env.HOME !== undefined) {
     const candidates = [
-      process.env.HOME + "/bin/stockfish-bin",
-      process.env.HOME + "/.local/bin/stockfish",
+      `${process.env.HOME  }/bin/stockfish-bin`,
+      `${process.env.HOME  }/.local/bin/stockfish`,
     ];
     for (const p of candidates) {
-      if (existsSync(p)) return p;
+      if (existsSync(p)) {return p;}
     }
   }
   // Fall back to bare name — relies on $PATH (works in Docker with apt-installed stockfish)
@@ -39,7 +39,7 @@ let activeAnalyses = 0;
  * Acquire an analysis slot. Returns true if a slot is available, false if at capacity.
  */
 export function acquireAnalysisSlot(): boolean {
-  if (activeAnalyses >= MAX_CONCURRENT_ANALYSES) return false;
+  if (activeAnalyses >= MAX_CONCURRENT_ANALYSES) {return false;}
   activeAnalyses++;
   return true;
 }
@@ -48,7 +48,7 @@ export function acquireAnalysisSlot(): boolean {
  * Release an analysis slot after analysis completes or fails.
  */
 export function releaseAnalysisSlot(): void {
-  if (activeAnalyses > 0) activeAnalyses--;
+  if (activeAnalyses > 0) {activeAnalyses--;}
 }
 
 interface Score {
@@ -77,7 +77,7 @@ async function readUntilBestMove(
 
   for (;;) {
     const { done, value } = await reader.read();
-    if (done) break;
+    if (done) {break;}
 
     buffer += decoder.decode(value, { stream: true });
     const lines = buffer.split("\n");
@@ -130,9 +130,9 @@ async function readUntil(
   let buffer = "";
   for (;;) {
     const { done, value } = await reader.read();
-    if (done) break;
+    if (done) {break;}
     buffer += decoder.decode(value, { stream: true });
-    if (buffer.includes(target)) break;
+    if (buffer.includes(target)) {break;}
   }
 }
 
@@ -186,7 +186,7 @@ export function spawnStockfish(): StockfishHandle {
   const sendCmd = (cmd: string): void => {
     // Strip newlines to prevent UCI command injection
     const sanitized = cmd.replace(/[\r\n]/g, "");
-    void stdin.write(sanitized + "\n");
+    void stdin.write(`${sanitized  }\n`);
     void stdin.flush();
   };
 
@@ -220,8 +220,8 @@ async function analyzeSinglePosition(
   fen: string,
   sf: StockfishHandle,
 ): Promise<AnalysisResult> {
-  sf.sendCmd("position fen " + fen);
-  sf.sendCmd("go movetime " + String(SEARCH_MOVETIME));
+  sf.sendCmd(`position fen ${  fen}`);
+  sf.sendCmd(`go movetime ${  String(SEARCH_MOVETIME)}`);
   const result = await withTimeout(
     readUntilBestMove(sf.reader),
     POSITION_TIMEOUT_MS,
@@ -232,8 +232,8 @@ async function analyzeSinglePosition(
   // Normalize to White's perspective (like Lichess does).
   const isBlackToMove = fen.split(" ")[1] === "b";
   if (isBlackToMove) {
-    if (result.score.cp !== null) result.score.cp = -result.score.cp;
-    if (result.score.mate !== null) result.score.mate = -result.score.mate;
+    if (result.score.cp !== null) {result.score.cp = -result.score.cp;}
+    if (result.score.mate !== null) {result.score.mate = -result.score.mate;}
   }
 
   return result;

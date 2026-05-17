@@ -1,17 +1,17 @@
-import { chromium } from "playwright-core";
+import { chromium, type Browser, type BrowserContext, type Page } from "playwright-core";
 import { beforeAll, afterAll, beforeEach } from "bun:test";
-
-import type { Browser, BrowserContext, Page } from "playwright-core";
 
 export const BASE_URL = "http://localhost:5173";
 
 let browser: Browser | null = null;
 
 async function ensureBrowser(): Promise<Browser> {
-  if (browser === null || !browser.isConnected()) {
+  const current = browser;
+  if (current?.isConnected() !== true) {
     browser = await chromium.launch();
+    return browser;
   }
-  return browser;
+  return current;
 }
 
 /**

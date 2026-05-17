@@ -28,7 +28,7 @@ export async function fetchArchives(username: string): Promise<string[]> {
   );
   if (!r.ok) {
     throw new Error(
-      "Failed to fetch archives for " + username + ": " + String(r.status),
+      `Failed to fetch archives for ${  username  }: ${  String(r.status)}`,
     );
   }
   const { archives } = (await r.json()) as { archives: string[] };
@@ -47,7 +47,7 @@ export async function fetchMonthGames(
   });
   if (!r.ok) {
     throw new Error(
-      "Failed to fetch games from " + archiveUrl + ": " + String(r.status),
+      `Failed to fetch games from ${  archiveUrl  }: ${  String(r.status)}`,
     );
   }
   const { games } = (await r.json()) as { games: ChessComGame[] };

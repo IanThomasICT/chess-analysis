@@ -64,12 +64,12 @@ analyze.get("/analyze/:gameId", (c) => {
             depth: result.depth,
             total: result.total,
           });
-          controller.enqueue(encoder.encode("data: " + data + "\n\n"));
+          controller.enqueue(encoder.encode(`data: ${  data  }\n\n`));
         }
 
         // Signal completion
         controller.enqueue(
-          encoder.encode("data: " + JSON.stringify({ done: true }) + "\n\n"),
+          encoder.encode(`data: ${  JSON.stringify({ done: true })  }\n\n`),
         );
       } catch (error: unknown) {
         console.error(
@@ -78,7 +78,7 @@ analyze.get("/analyze/:gameId", (c) => {
         );
         controller.enqueue(
           encoder.encode(
-            "data: " + JSON.stringify({ error: "Analysis failed" }) + "\n\n",
+            `data: ${  JSON.stringify({ error: "Analysis failed" })  }\n\n`,
           ),
         );
       } finally {

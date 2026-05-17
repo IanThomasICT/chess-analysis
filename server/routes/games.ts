@@ -1,11 +1,8 @@
 import { Hono } from "hono";
 import { db } from "../lib/db";
-import { fetchRecentGames } from "../lib/chesscom";
+import { fetchRecentGames, type ChessComGame } from "../lib/chesscom";
 import { pgnToFens, pgnToMoves } from "../lib/pgn";
-import { isGameAnalyzed, getGameAnalysis } from "../lib/stockfish";
-
-import type { ChessComGame } from "../lib/chesscom";
-import type { AnalysisRow } from "../lib/stockfish";
+import { isGameAnalyzed, getGameAnalysis, type AnalysisRow } from "../lib/stockfish";
 
 /** Chess.com usernames: alphanumeric, underscores, hyphens, up to 50 chars */
 const USERNAME_PATTERN = /^[a-zA-Z0-9_-]{1,50}$/;
@@ -48,12 +45,14 @@ games.get("/games", async (c) => {
     const upsertMany = db.transaction((gamesToUpsert: ChessComGame[]) => {
       for (const g of gamesToUpsert) {
         const gameId = g.url.split("/").pop() ?? g.url;
-        const result =
-          g.white.result === "win"
-            ? "1-0"
-            : g.black.result === "win"
-              ? "0-1"
-              : "1/2-1/2";
+        let result: "1-0" | "0-1" | "1/2-1/2";
+        if (g.white.result === "win") {
+          result = "1-0";
+        } else if (g.black.result === "win") {
+          result = "0-1";
+        } else {
+          result = "1/2-1/2";
+        }
 
         upsert.run(
           gameId,
@@ -104,7 +103,7 @@ games.get("/games/:gameId", (c) => {
   }
 
   let fens: string[];
-  let moves: { san: string; from: string; to: string }[];
+  let moves: Array<{ san: string; from: string; to: string }>;
   try {
     fens = pgnToFens(game.pgn);
     moves = pgnToMoves(game.pgn).map((m) => ({
@@ -117,10 +116,7 @@ games.get("/games/:gameId", (c) => {
   }
 
   const analyzed = isGameAnalyzed(gameId, fens.length);
-  let analysis: AnalysisRow[] = [];
-  if (analyzed) {
-    analysis = getGameAnalysis(gameId);
-  }
+  const analysis: AnalysisRow[] = analyzed ? getGameAnalysis(gameId) : [];
 
   return c.json({
     game: {

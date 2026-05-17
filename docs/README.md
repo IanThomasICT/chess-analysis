@@ -2,7 +2,7 @@
 
 | Spec | Related Files | Description |
 |---|---|---|
-| [core.md](core.md) | `server/lib/db.ts`, `client/vite.config.ts`, `tsconfig.json`, `package.json` | Architecture overview (Vite SPA + Hono API split-stack), tech stack, data flow diagram, SQLite schema (games + analysis tables), and file structure map |
+| [core.md](core.md) | `server/lib/db.ts`, `client/vite.config.ts`, `tsconfig.json`, `package.json` | Project vision (single-user tool, target metrics: win rate / accuracy-blunder rate / elo), design principles, feature-to-metric alignment, non-goals. Followed by architecture: split-stack, data flow, SQLite schema, file structure |
 | [board.md](board.md) | `client/src/components/ChessBoard.tsx`, `server/lib/pgn.ts`, `client/vite.config.ts` | Chessground v10 integration, CSS setup, Vite config, PGN-to-FEN parsing with chess.js, move indexing conventions |
 | [analysis-mode.md](analysis-mode.md) | `server/lib/stockfish.ts`, `server/routes/analyze.ts`, `client/src/pages/Analysis.tsx` | Stockfish UCI subprocess lifecycle, score normalization (White's perspective), movetime-based search, analysis caching, SSE streaming protocol, auto-start analysis, precomputed eval data |
 | [gallery.md](gallery.md) | `server/lib/chesscom.ts`, `client/src/pages/Home.tsx`, `client/src/components/GameCard.tsx` | Chess.com PubAPI client, game fetching and DB upsert, home page with TanStack Query, client-side filtering (text/time class/result), GameCard component |
@@ -10,3 +10,4 @@
 | [routing.md](routing.md) | `client/src/App.tsx`, `client/src/pages/Home.tsx`, `client/src/pages/Analysis.tsx`, `server/routes/games.ts`, `server/routes/analyze.ts` | Client-side routing (react-router v7 library mode), API route handlers, TanStack Query data loading, dev proxy config, production static serve |
 | [linting.md](linting.md) | `eslint.config.ts`, `tsconfig.json`, `client/tsconfig.json`, `server/tsconfig.json` | ESLint strict type-checked config, zero-any policy, type import style (`separate-type-imports` + `verbatimModuleSyntax`), React hooks + `@eslint-react` rules (leak detection, DOM safety, naming), Bun type workarounds, check commands |
 | [security.md](security.md) | `server/index.ts`, `server/lib/rate-limit.ts`, `server/lib/stockfish.ts`, `server/lib/chesscom.ts` | Security middleware stack (headers, CORS, rate limiting), input validation, SSRF protection, Stockfish concurrency/timeout, error handling |
+| [roadmap.md](roadmap.md) | `core.md`, `analysis-mode.md`, `gallery.md`, `server/lib/db.ts` | Feature gaps vs. vision — tiered catalog of unbuilt features that move win rate / accuracy / elo, with data sources, schema impact, complexity, and open questions for future implementation plans |

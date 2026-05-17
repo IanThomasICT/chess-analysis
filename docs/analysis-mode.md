@@ -149,22 +149,52 @@ The page fetches game data via TanStack Query (`useQuery`). When the response ar
 | State | Purpose |
 |---|---|
 | `currentMove` | Index into the FEN array (0 = start) |
-| `analysis` | Array of `AnalysisRow` (populated from query or SSE) |
+| `analysis` | Array of `AnalysisRow` (seeded from query, extended by SSE) |
 | `isAnalyzing` | Whether SSE stream is active |
 | `progress` | Percentage complete (0-100) |
+| `userFlipped` | Whether the user has toggled board orientation away from the default |
+
+### Score Helpers (module-level)
+
+Three pure helpers at the top of `Analysis.tsx` centralize all eval math so it isn't repeated across memos:
+
+| Helper | Purpose |
+|---|---|
+| `evalPawns(row)` | Convert an `AnalysisRow` to pawns (graph / bar units). Mate → ±10. |
+| `evalCp(row)` | Convert to centipawn-equivalent for swing classification. Mate → ±1000. |
+| `classifySwing(swing)` | Map a swing (cp, signed against the mover) to a CSS class: red blunder / orange mistake / yellow inaccuracy / empty. |
 
 ### Precomputed Derived Data
 
-All expensive computations are memoized via `useMemo` and only recompute when `analysis` changes -- **not** on every arrow key press:
+All expensive computations are memoized via `useMemo` and only recompute when `analysis` changes — **not** on every arrow key press:
 
 | Memo | Depends on | Purpose |
 |---|---|---|
-| `scores` | `analysis` | Pre-indexed `number[]` by move index for O(1) eval lookup |
-| `evalData` | `analysis` | Sorted + mapped data points for the EvalGraph |
-| `moveClasses` | `analysis`, `fens.length` | Precomputed CSS classification strings (blunder/mistake/inaccuracy) via a `Map<move_index, entry>` for O(1) lookups |
+| `scores` | `analysis` | Pre-indexed `number[]` by move index via `evalPawns` (O(1) lookup) |
+| `scoreMates` | `analysis` | Pre-indexed `Array<number \| null>` of raw mate distances; drives the "M5" / "-M5" label on `EvalBar` |
+| `bestMoves` | `analysis` | Pre-indexed `Array<string \| undefined>` of UCI best-move strings (sparse array) |
+| `bestMoveShapes` | `bestMoves`, `currentMove` | `DrawShape[]` — a single blue arrow built from the current position's UCI best move, fed to `ChessBoard.autoShapes` |
+| `evalData` | `analysis` | Sorted + mapped points for `EvalGraph` (via `evalPawns`) |
+| `moveClasses` | `analysis`, `fens.length` | Precomputed CSS classifications via a `Map<move_index, entry>` + `evalCp` + `classifySwing` (O(n), not O(n²)) |
 | `moveSans` | `moves` | Stable `string[]` reference for MoveList |
+| `lastMove` | `currentMove`, `moves` | `[from, to]` tuple for board highlighting; stable reference prevents spurious ChessBoard effects |
 
-`currentScore` is a plain array index (`scores[currentMove] ?? 0`), not a `.find()` scan.
+`currentScore` and `currentMate` are plain array indexes (`scores[currentMove] ?? 0`, `scoreMates[currentMove] ?? null`), not `.find()` scans.
+
+### Board Orientation & Player Names
+
+Orientation logic lives entirely in `Analysis.tsx` — the `ChessBoard` component is orientation-agnostic.
+
+- `defaultOrientation`: derived from the game — if the searched user played Black, defaults to `"black"`, else `"white"`.
+- `flippedOrientation`: the opposite of `defaultOrientation` (precomputed to avoid a nested ternary).
+- `orientation`: `userFlipped ? flippedOrientation : defaultOrientation`. Passed to both `ChessBoard` and `EvalBar` so they stay in sync.
+
+A flip button in the move-navigation row toggles `userFlipped`.
+
+Player names render above and below the board, swapped to match `orientation`:
+- `topPlayerName` / `bottomPlayerName` chosen from `game.white` / `game.black` by orientation
+- The searched user's name is bolded (`isSearchedUserTop` / `isSearchedUserBottom`)
+- A small color-dot (white or gray-800) indicates each side
 
 ### Keyboard Navigation
 
@@ -179,4 +209,4 @@ The EvalGraph uses uPlot (canvas-based). When `currentMove` changes, only `chart
 
 ### Score Display
 
-Centipawn scores are converted to pawns (`cp / 100`) for display. Mate scores are clamped to +/-10 pawns equivalent.
+Centipawn scores are converted to pawns (`cp / 100`) for display. Mate scores collapse to ±10 pawns in `evalPawns()` (for graph / bar position) and ±1000 cp in `evalCp()` (for swing classification, so a missed defense against a forced mate always classifies as a blunder).

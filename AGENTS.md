@@ -16,9 +16,10 @@ Read `docs/README.md` first. It indexes all specs with related files so you can 
 ```bash
 bun run dev          # Start dev servers (Vite SPA on :5173 + Hono API on :3001)
 bun run build        # Production build (Vite client)
-bun run typecheck    # tsc -b + eslint (run this before committing)
-bun run lint         # ESLint only
-bun run validate     # typecheck + lint + build (run after every change)
+bun run typecheck    # tsc -b (incremental, cached)
+bun run lint         # ESLint with content-hash cache (<1s warm)
+bun run lint:fix     # ESLint with autofix
+bun run validate     # typecheck + lint + build (~2s warm)
 bun run test         # Unit tests (bun:test, tests/ directory)
 bun test tests/pgn.test.ts              # Run a single unit test file
 bun run test:e2e     # Seed DB + run all e2e tests (requires dev servers running)

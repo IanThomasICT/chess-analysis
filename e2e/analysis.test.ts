@@ -1,4 +1,5 @@
 import { describe, test, expect, beforeAll, afterAll } from "bun:test";
+import type { Page } from "playwright-core";
 import { setupPlaywright } from "./setup";
 import { seedTestDatabase, cleanTestDatabase } from "./fixtures";
 
@@ -13,7 +14,7 @@ afterAll(() => {
 });
 
 // Helper: reset the board to starting position (move 0).
-async function resetToStart(page: import("playwright-core").Page) {
+async function resetToStart(page: Page) {
   await page.keyboard.press("Home");
   await page.getByText(/^0 \/ \d+$/).waitFor({ state: "visible" });
 }

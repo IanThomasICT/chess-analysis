@@ -55,6 +55,6 @@ export function pgnToMoves(pgn: string): MoveInfo[] {
  * Extract a game result string from PGN headers or game data.
  */
 export function getGameResult(pgn: string): string | null {
-  const match = pgn.match(/\[Result\s+"([^"]+)"\]/);
+  const match = /\[Result\s+"([^"]+)"\]/.exec(pgn);
   return match ? match[1] : null;
 }

@@ -22,15 +22,15 @@ interface ChessBoardProps {
 
 Chessground is initialized once via a `useEffect` with empty deps. Subsequent FEN/lastMove/autoShapes/orientation changes are applied via `api.current?.set(...)` without recreating the instance. The instance is destroyed on unmount.
 
-### Board Orientation
+### Orientation prop (board is orientation-agnostic)
 
-The `orientation` prop controls which color appears at the bottom of the board. The Analysis page defaults this to the searched user's color (e.g. if the user played Black, the board starts with Black on the bottom). A flip button in the navigation controls toggles orientation.
+The `orientation` prop just gets forwarded to Chessground. `ChessBoard` makes no decisions about it — all orientation logic (default to searched user's color + manual flip toggle) lives in `Analysis.tsx`. See [analysis-mode.md](analysis-mode.md#board-orientation--player-names) for that logic.
 
 Position updates pass `animation: { enabled: false }` to `api.set()` for instant piece placement. The 200ms animation from initialization only applies to the first render. This prevents animation queueing during rapid keyboard navigation.
 
-### Best Move Arrow
+### autoShapes prop (best-move arrow)
 
-The Analysis page passes a blue arrow shape via `autoShapes` to show Stockfish's recommended best move from the current position. The UCI best move string (e.g. `"e2e4"`) is split into `orig`/`dest` squares and rendered as a `DrawShape` with the built-in `"blue"` brush. The arrow updates reactively as the user navigates moves.
+The parent passes arrow/circle overlays via `autoShapes`. `Analysis.tsx` uses this to draw a blue arrow showing Stockfish's recommended best move from the current position. The UCI best-move string (e.g. `"e2e4"`) is split into `orig`/`dest` squares in a `bestMoveShapes` memo (keyed on `[bestMoves, currentMove]`) and rendered as a `DrawShape` with the built-in `"blue"` brush. The arrow updates reactively as the user navigates.
 
 Configuration locks down all interaction:
 

@@ -115,26 +115,21 @@ function getMoveClass(
   moveIndex: number,
   analysis: AnalysisEntry[]
 ): string {
-  if (analysis.length === 0) return "";
+  if (analysis.length === 0) {return "";}
 
   const before = analysis.find((a) => a.move_index === moveIndex);
   const after = analysis.find((a) => a.move_index === moveIndex + 1);
 
-  if (before === undefined || after === undefined) return "";
+  if (before === undefined || after === undefined) {return "";}
 
-  const scoreBefore =
-    before.score_mate !== null
-      ? before.score_mate > 0
-        ? 1000
-        : -1000
-      : (before.score_cp ?? 0);
-
-  const scoreAfter =
-    after.score_mate !== null
-      ? after.score_mate > 0
-        ? 1000
-        : -1000
-      : (after.score_cp ?? 0);
+  const cp = (row: { score_mate: number | null; score_cp: number | null }): number => {
+    if (row.score_mate !== null) {
+      return row.score_mate > 0 ? 1000 : -1000;
+    }
+    return row.score_cp ?? 0;
+  };
+  const scoreBefore = cp(before);
+  const scoreAfter = cp(after);
 
   // Even position index = white just played
   const isWhiteMove = moveIndex % 2 === 0;
@@ -143,9 +138,9 @@ function getMoveClass(
     ? scoreAfter - scoreBefore // White moved: higher = better for white
     : scoreBefore - scoreAfter; // Black moved: lower eval = better for black
 
-  if (swing < -300) return "text-red-500 font-bold"; // blunder
-  if (swing < -100) return "text-orange-500 font-semibold"; // mistake
-  if (swing < -50) return "text-yellow-500"; // inaccuracy
+  if (swing < -300) {return "text-red-500 font-bold";} // blunder
+  if (swing < -100) {return "text-orange-500 font-semibold";} // mistake
+  if (swing < -50) {return "text-yellow-500";} // inaccuracy
 
   return "";
 }
@@ -302,7 +297,7 @@ interface AnalysisRowScore {
 
 /** Replicates getCurrentScore from analysis.$gameId.tsx */
 function getCurrentScore(entry: AnalysisRowScore | undefined): number {
-  if (entry === undefined) return 0;
+  if (entry === undefined) {return 0;}
   if (entry.score_mate !== null) {
     return entry.score_mate > 0 ? 10 : -10;
   }
@@ -353,8 +348,8 @@ function mapResult(
   white: ChessComPlayer,
   black: ChessComPlayer
 ): string {
-  if (white.result === "win") return "1-0";
-  if (black.result === "win") return "0-1";
+  if (white.result === "win") {return "1-0";}
+  if (black.result === "win") {return "0-1";}
   return "1/2-1/2";
 }
 
@@ -416,7 +411,7 @@ function matchesFilters(
     const search = textFilter.toLowerCase();
     const matchesWhite = game.white.toLowerCase().includes(search);
     const matchesBlack = game.black.toLowerCase().includes(search);
-    if (!matchesWhite && !matchesBlack) return false;
+    if (!matchesWhite && !matchesBlack) {return false;}
   }
 
   // Time class filter
@@ -435,9 +430,9 @@ function matchesFilters(
       (!isWhite && game.result === "1-0");
     const isDraw = game.result === "1/2-1/2";
 
-    if (resultFilter === "win" && !userWon) return false;
-    if (resultFilter === "loss" && !userLost) return false;
-    if (resultFilter === "draw" && !isDraw) return false;
+    if (resultFilter === "win" && !userWon) {return false;}
+    if (resultFilter === "loss" && !userLost) {return false;}
+    if (resultFilter === "draw" && !isDraw) {return false;}
   }
 
   return true;

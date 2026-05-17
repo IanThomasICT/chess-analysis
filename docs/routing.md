@@ -2,9 +2,9 @@
 
 ## Client-Side Routing
 
-File: `client/src/App.tsx`
+Files: `client/src/main.tsx` (router + providers), `client/src/App.tsx` (route table).
 
-The app uses **react-router v7 in library mode** (CSR, not framework mode). Routes are defined with JSX `<Route>` elements inside a `<BrowserRouter>`:
+The app uses **react-router v7 in library mode** (CSR, not framework mode). `main.tsx` wraps `<App />` in `<BrowserRouter>` alongside `<QueryClientProvider>` and `<StrictMode>`. `App.tsx` contains only the route table — `<Routes>` + `<Route>` elements, no router component:
 
 | URL Pattern | Component | Purpose |
 |---|---|---|

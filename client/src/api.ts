@@ -47,13 +47,13 @@ export interface GameDetailResponse {
 }
 
 export async function fetchGames(username: string): Promise<GamesResponse> {
-  const r = await fetch("/api/games?username=" + encodeURIComponent(username));
-  if (!r.ok) throw new Error("Failed to fetch games");
+  const r = await fetch(`/api/games?username=${  encodeURIComponent(username)}`);
+  if (!r.ok) {throw new Error("Failed to fetch games");}
   return r.json() as Promise<GamesResponse>;
 }
 
 export async function fetchGame(gameId: string): Promise<GameDetailResponse> {
-  const r = await fetch("/api/games/" + encodeURIComponent(gameId));
-  if (!r.ok) throw new Error("Failed to fetch game");
+  const r = await fetch(`/api/games/${  encodeURIComponent(gameId)}`);
+  if (!r.ok) {throw new Error("Failed to fetch game");}
   return r.json() as Promise<GameDetailResponse>;
 }

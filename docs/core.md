@@ -1,4 +1,57 @@
-# Core Architecture
+# Core Vision
+
+## Purpose
+
+A **personal, single-user tool** for the project owner (Ian) to analyze his own Chess.com games and **measurably improve at chess**. Not a product. Not multi-tenant. Not a public service. Every feature exists to move one of three metrics:
+
+| Metric | What it measures | How this tool helps |
+|---|---|---|
+| **Win rate** | % games won across a time class | Surface losing patterns (openings, time pressure, recurring blunders) so they can be drilled and eliminated |
+| **Accuracy / blunder rate** | Stockfish-judged move quality per game | Pinpoint the exact moves where eval swings, classify them (inaccuracy / mistake / blunder), and make the pattern reviewable |
+| **Elo** | Chess.com rating progression | Lagging indicator. Tracked over time to validate that the above two metrics actually translate into rating gains |
+
+If a proposed feature does not plausibly move one of those three numbers for **this single user**, it does not belong in this tool.
+
+## Design Principles
+
+1. **Local-first, single-user.** Runs on Ian's machine. No auth, no accounts, no hosted backend. SQLite on disk, Stockfish as a child process. Chess.com API is proxied through the local server only to dodge CORS.
+2. **Optimize for review velocity.** The bottleneck on improvement is *games reviewed per week*. Every interaction should make it faster to: load a game → spot the critical moments → understand what went wrong → move to the next game.
+3. **Trust the engine, surface the signal.** Stockfish evals are ground truth. The UI's job is to make eval swings, blunders, and missed best moves *instantly visible* — not to bury them in noise.
+4. **Cache aggressively.** Analysis is expensive (Stockfish CPU time). Re-analyzing a position is waste. Every eval is persisted to SQLite keyed by `(game_id, move_index)` and reused forever.
+5. **No premature generality.** No multi-user schema, no plugin system, no abstractions for hypothetical future games sites. If Lichess support is ever wanted, it gets added then — not designed for now.
+
+## Feature Alignment
+
+Each existing feature should trace back to a metric:
+
+| Feature | Serves |
+|---|---|
+| Chess.com game import + gallery | Review velocity — get to the game fast |
+| Filter by result / time class | Win rate analysis — isolate losses in a specific format |
+| Stockfish per-position eval + cache | Accuracy / blunder rate — ground truth |
+| Eval graph with inflection dots | Review velocity — jump straight to the critical moments |
+| Best-move arrow on board | Accuracy — show what should have been played |
+| Move list with classification annotations | Blunder rate — at-a-glance move quality |
+| EvalBar | Review velocity — current position assessment without parsing numbers |
+
+Features **not yet built but aligned** with the vision (candidates, not commitments):
+
+- Aggregate dashboards: blunder rate over time, accuracy by opening, win rate by time-of-day or time class
+- Opening explorer keyed to the user's own results (which openings actually win for *me*)
+- Recurring-mistake detection: cluster blunder positions by motif (hanging piece, missed fork, back-rank, etc.)
+- Elo trend overlay with annotations for behavioral changes (e.g. "started reviewing daily on date X")
+
+## Non-Goals
+
+- Multi-user support, accounts, sharing, public deployment
+- Real-time play, puzzles, training modes unrelated to the user's own game history
+- Lichess or other game-source integration (until/unless the user actually wants it)
+- Mobile-optimized UI (desktop review is the workflow)
+- Engine choice beyond Stockfish
+
+---
+
+# Architecture
 
 ## Stack
 
@@ -17,25 +70,25 @@
 | Linting | ESLint + `typescript-eslint` (strict + type-checked) |
 | Security | `hono/secure-headers`, in-memory rate limiter (`server/lib/rate-limit.ts`) |
 
-## Design Principles
+Stack choices follow the vision: Bun + SQLite + local Stockfish = zero-ops, single-machine, fast iteration. No cloud DB, no managed engine API, no auth provider.
 
-This is a **local-only** application. There is no hosted backend. Stockfish runs as a child process of the Bun server, and the SQLite database lives on disk at the project root (`analysis.db`, gitignored). All Chess.com API calls are proxied through the server to avoid CORS issues.
+## Split-Stack
 
-## Split-Stack Architecture
+**Vite React SPA** (`client/`) ↔ **Bun Hono API** (`server/`) via JSON + SSE.
 
-The app is a **Vite React SPA** (`client/`) communicating with a **Bun Hono API** (`server/`) via JSON endpoints.
-
-- **Dev mode**: Vite on `:5173` proxies `/api/*` to Hono on `:3001` (configured in `client/vite.config.ts`)
-- **Production**: Hono serves both the built static SPA and the API on a single port
+- **Dev**: Vite on `:5173` proxies `/api/*` to Hono on `:3001` (`client/vite.config.ts`)
+- **Production**: Hono serves both built SPA and API on one port
 
 ## Server Middleware
 
-The Hono server (`server/index.ts`) applies middleware in this order:
+Order in `server/index.ts`:
 
-1. `secureHeaders()` — X-Content-Type-Options, X-Frame-Options, HSTS, etc.
-2. `cors()` — development only (Vite `:5173` → Hono `:3001`); disabled in production (same-origin)
-3. `rateLimit()` — per-IP: 60 req/min general, 5 req/min for `/api/analyze/*`
-4. `app.onError()` — global catch-all returning generic 500 (never leaks internals)
+1. `secureHeaders()` — standard hardening
+2. `cors()` — dev only (`:5173` → `:3001`); disabled in production (same-origin)
+3. `rateLimit()` — 60 req/min general, 5 req/min on `/api/analyze/*`
+4. `app.onError()` — generic 500, no internal leaks
+
+Security middleware exists because the server *can* be exposed (e.g. tunnel for review on another device) — not because it's a public service.
 
 ## Data Flow
 
@@ -63,13 +116,11 @@ Browser (React SPA)              Bun Server (Hono API)
 
 ## Database Schema
 
-File: `server/lib/db.ts`
+File: `server/lib/db.ts`. SQLite at `analysis.db` (project root, gitignored), WAL mode.
 
-The database is created at `analysis.db` in the project root with WAL journaling mode enabled.
+### `games`
 
-### `games` table
-
-Stores game metadata fetched from Chess.com. The `id` is the game's numeric ID extracted from its Chess.com URL.
+Game metadata from Chess.com. `id` is the numeric ID from the game URL.
 
 | Column | Type | Description |
 |---|---|---|
@@ -85,22 +136,24 @@ Stores game metadata fetched from Chess.com. The `id` is the game's numeric ID e
 
 Index: `idx_games_username` on `username`.
 
-### `analysis` table
+### `analysis`
 
-Stores per-position Stockfish evaluations. Composite primary key on `(game_id, move_index)`.
+Per-position Stockfish evaluations. Composite PK `(game_id, move_index)`. This table is the **accuracy/blunder ground truth** — every metric eventually derives from it.
 
 | Column | Type | Description |
 |---|---|---|
 | `game_id` | TEXT NOT NULL | FK to `games.id` |
 | `move_index` | INTEGER NOT NULL | Position index (0 = starting position) |
 | `fen` | TEXT NOT NULL | FEN string for this position |
-| `move_san` | TEXT | SAN of the move that led here (null for index 0) |
+| `move_san` | TEXT | SAN of move that led here (null for index 0) |
 | `score_cp` | INTEGER | Centipawn score (null if mate) |
 | `score_mate` | INTEGER | Mate-in-N (null if centipawn) |
-| `best_move` | TEXT | Stockfish's recommended move (UCI notation) |
+| `best_move` | TEXT | Stockfish's recommended move (UCI) |
 | `depth` | INTEGER | Search depth used |
 
 Index: `idx_analysis_game_id` on `game_id`.
+
+All scores normalized to **White's perspective** (positive = White advantage).
 
 ## File Structure
 

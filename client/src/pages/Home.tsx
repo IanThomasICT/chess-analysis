@@ -12,7 +12,7 @@ export function Home() {
 
   const { data, isFetching } = useQuery({
     queryKey: ["games", usernameParam],
-    queryFn: () => fetchGames(usernameParam),
+    queryFn: async () => fetchGames(usernameParam),
     enabled: usernameParam !== "",
   });
 
@@ -54,7 +54,7 @@ export function Home() {
       const search = filter.toLowerCase();
       const matchesWhite = g.white.toLowerCase().includes(search);
       const matchesBlack = g.black.toLowerCase().includes(search);
-      if (!matchesWhite && !matchesBlack) return false;
+      if (!matchesWhite && !matchesBlack) {return false;}
     }
 
     // Time class filter
@@ -64,7 +64,7 @@ export function Home() {
 
     // Result filter
     if (resultFilter !== "all") {
-      if (username === null) return true;
+      if (username === null) {return true;}
       const isWhite = g.white.toLowerCase() === username.toLowerCase();
       const userWon =
         (isWhite && g.result === "1-0") || (!isWhite && g.result === "0-1");
@@ -72,9 +72,9 @@ export function Home() {
         (isWhite && g.result === "0-1") || (!isWhite && g.result === "1-0");
       const isDraw = g.result === "1/2-1/2";
 
-      if (resultFilter === "win" && !userWon) return false;
-      if (resultFilter === "loss" && !userLost) return false;
-      if (resultFilter === "draw" && !isDraw) return false;
+      if (resultFilter === "win" && !userWon) {return false;}
+      if (resultFilter === "loss" && !userLost) {return false;}
+      if (resultFilter === "draw" && !isDraw) {return false;}
     }
 
     return true;

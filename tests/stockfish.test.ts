@@ -222,8 +222,8 @@ function resolveStockfishPath(
   envPath: string | undefined,
   homeDir: string | undefined
 ): string {
-  if (envPath !== undefined) return envPath;
-  if (homeDir !== undefined) return homeDir + "/.local/bin/stockfish";
+  if (envPath !== undefined) {return envPath;}
+  if (homeDir !== undefined) {return `${homeDir  }/.local/bin/stockfish`;}
   return "/usr/local/bin/stockfish";
 }
 
@@ -273,7 +273,7 @@ interface SseErrorEvent {
 type SseEvent = SseProgressEvent | SseDoneEvent | SseErrorEvent;
 
 function parseSseLine(line: string): SseEvent | null {
-  if (!line.startsWith("data: ")) return null;
+  if (!line.startsWith("data: ")) {return null;}
   return JSON.parse(line.slice(6)) as SseEvent;
 }
 

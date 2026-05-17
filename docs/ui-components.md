@@ -121,7 +121,9 @@ interface MoveListProps {
 
 Classifications are **precomputed in the parent** (`Analysis.tsx`) via `useMemo` with a `Map<move_index, entry>` for O(1) lookups, then passed as a simple `string[]`. MoveList indexes into this array (`moveClasses[positionIndex] ?? ""`). No per-render computation.
 
-The classification thresholds (applied in the parent):
+The classification math lives in module-level helpers in `Analysis.tsx`: `evalCp(row)` converts each side's eval (mates → ±1000), and `classifySwing(swing)` maps the signed swing to a CSS class.
+
+The classification thresholds:
 
 | Eval Swing (centipawns) | Classification | CSS |
 |---|---|---|
@@ -134,7 +136,7 @@ The swing direction is relative to the side that moved. A negative swing means t
 
 ### Auto-Scroll
 
-The active move button is scrolled into view via `scrollIntoView({ block: "nearest", behavior: "smooth" })` whenever `currentMove` changes.
+The active move button is scrolled into view via `scrollIntoView({ block: "nearest", behavior: "instant" })` whenever `currentMove` changes. Instant (not smooth) so rapid arrow-key navigation never lags behind the keystrokes.
 
 ### Layout
 

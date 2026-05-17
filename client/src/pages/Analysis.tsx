@@ -3,8 +3,7 @@ import { useParams, Link } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import type { DrawShape } from "@lichess-org/chessground/draw";
 import type { Key } from "@lichess-org/chessground/types";
-import { fetchGame } from "../api";
-import type { AnalysisRow, GameMove } from "../api";
+import { fetchGame, type AnalysisRow, type GameMove } from "../api";
 import { ChessBoard } from "../components/ChessBoard";
 import { EvalBar } from "../components/EvalBar";
 import { EvalGraph } from "../components/EvalGraph";
@@ -14,6 +13,37 @@ import { MoveList } from "../components/MoveList";
 const EMPTY_FENS: string[] = [];
 const EMPTY_MOVES: GameMove[] = [];
 const EMPTY_SHAPES: DrawShape[] = [];
+
+// Convert an analysis row to a single eval number in pawns (graph / bar units).
+// Mate scores collapse to ±10 pawns so the graph stays bounded.
+function evalPawns(row: AnalysisRow): number {
+  if (row.score_mate !== null) {
+    return row.score_mate > 0 ? 10 : -10;
+  }
+  return (row.score_cp ?? 0) / 100;
+}
+
+// Centipawn-equivalent score for swing classification. Mates collapse to ±1000cp.
+function evalCp(row: AnalysisRow): number {
+  if (row.score_mate !== null) {
+    return row.score_mate > 0 ? 1000 : -1000;
+  }
+  return row.score_cp ?? 0;
+}
+
+// CSS class for a move based on how much the eval swung against the mover.
+function classifySwing(swing: number): string {
+  if (swing < -300) {
+    return "text-red-500 font-bold";
+  }
+  if (swing < -100) {
+    return "text-orange-500 font-semibold";
+  }
+  if (swing < -50) {
+    return "text-yellow-500";
+  }
+  return "";
+}
 
 /** Shape of SSE event data from the analysis endpoint */
 interface AnalysisEvent {
@@ -34,7 +64,7 @@ export function Analysis() {
 
   const { data, isPending, isError } = useQuery({
     queryKey: ["game", gameId],
-    queryFn: () => fetchGame(gameId ?? ""),
+    queryFn: async () => fetchGame(gameId ?? ""),
     enabled: gameId !== undefined && gameId !== "",
   });
 
@@ -44,7 +74,9 @@ export function Analysis() {
   const [progress, setProgress] = useState(0);
   const [userFlipped, setUserFlipped] = useState(false);
 
-  // Sync initial analysis when data loads
+  // Seed analysis state from query data when it loads. SSE results extend this
+  // array in-place, so we need state — pure derivation is not enough.
+   
   useEffect(() => {
     if (data !== undefined) {
       setAnalysis(data.analysis);
@@ -62,20 +94,20 @@ export function Analysis() {
     game !== undefined && game.username.toLowerCase() === game.black.toLowerCase()
       ? "black"
       : "white";
-  const orientation: "white" | "black" = userFlipped
-    ? (defaultOrientation === "white" ? "black" : "white")
-    : defaultOrientation;
+  const flippedOrientation: "white" | "black" =
+    defaultOrientation === "white" ? "black" : "white";
+  const orientation: "white" | "black" = userFlipped ? flippedOrientation : defaultOrientation;
 
   // Set page title
   useEffect(() => {
     if (game !== undefined) {
-      document.title = game.white + " vs " + game.black + " - Chess Analyzer";
+      document.title = `${game.white} vs ${game.black} - Chess Analyzer`;
     }
   }, [game]);
 
   // Keyboard navigation
   useEffect(() => {
-    if (fens.length === 0) return;
+    if (fens.length === 0) {return;}
     const handler = (e: KeyboardEvent) => {
       if (e.key === "ArrowRight") {
         setCurrentMove((m) => Math.min(m + 1, maxMove));
@@ -94,16 +126,21 @@ export function Analysis() {
     return () => { window.removeEventListener("keydown", handler); };
   }, [maxMove, fens.length]);
 
-  // Auto-start analysis via SSE when game loads (if not already analyzed)
+  // Auto-start analysis via SSE when game loads (if not already analyzed).
+  // The setIsAnalyzing/setProgress calls below are part of the init sequence,
+  // not a state cascade — flagging them would just push complexity into refs.
   const analysisStartedRef = useRef(false);
+   
   useEffect(() => {
-    if (game === undefined || analyzed || analysisStartedRef.current) return;
+    if (game === undefined || analyzed || analysisStartedRef.current) {
+      return;
+    }
     analysisStartedRef.current = true;
     setIsAnalyzing(true);
     setProgress(0);
 
     const results: AnalysisRow[] = [];
-    const eventSource = new EventSource("/api/analyze/" + game.id);
+    const eventSource = new EventSource(`/api/analyze/${game.id}`);
 
     eventSource.onmessage = (event: MessageEvent<string>) => {
       const eventData = JSON.parse(event.data) as AnalysisEvent;
@@ -151,17 +188,14 @@ export function Analysis() {
   const scores = useMemo(() => {
     const arr: number[] = [];
     for (const a of analysis) {
-      arr[a.move_index] =
-        a.score_mate !== null
-          ? a.score_mate > 0 ? 10 : -10
-          : (a.score_cp ?? 0) / 100;
+      arr[a.move_index] = evalPawns(a);
     }
     return arr;
   }, [analysis]);
 
   // Pre-indexed mate distances: scoreMates[moveIndex] → mate count or null.
   const scoreMates = useMemo(() => {
-    const arr: (number | null)[] = [];
+    const arr: Array<number | null> = [];
     for (const a of analysis) {
       arr[a.move_index] = a.score_mate;
     }
@@ -171,7 +205,7 @@ export function Analysis() {
   // Pre-indexed best moves: bestMoves[moveIndex] → UCI string (e.g. "e2e4").
   // Typed as (string | undefined)[] because the array is sparse (not every index has a value).
   const bestMoves = useMemo(() => {
-    const arr: (string | undefined)[] = [];
+    const arr: Array<string | undefined> = [];
     for (const a of analysis) {
       arr[a.move_index] = a.best_move;
     }
@@ -184,7 +218,7 @@ export function Analysis() {
   // Arrow shape for Stockfish's recommended best move from the current position.
   const bestMoveShapes = useMemo((): DrawShape[] => {
     const bm = bestMoves[currentMove];
-    if (bm === undefined || bm.length < 4) return EMPTY_SHAPES;
+    if (bm === undefined || bm.length < 4) {return EMPTY_SHAPES;}
     return [{ orig: bm.slice(0, 2) as Key, dest: bm.slice(2, 4) as Key, brush: "blue" }];
   }, [bestMoves, currentMove]);
 
@@ -193,22 +227,16 @@ export function Analysis() {
     () =>
       [...analysis]
         .sort((a, b) => a.move_index - b.move_index)
-        .map((a) => ({
-          moveIndex: a.move_index,
-          score:
-            a.score_mate !== null
-              ? a.score_mate > 0
-                ? 10
-                : -10
-              : (a.score_cp ?? 0) / 100,
-        })),
+        .map((a) => ({ moveIndex: a.move_index, score: evalPawns(a) })),
     [analysis],
   );
 
   // Precompute move classifications once — O(n) with a Map, not O(n²) per render.
   // moveClasses[i] is the CSS class for the move from position i to position i+1.
   const moveClasses = useMemo(() => {
-    if (analysis.length === 0) return [];
+    if (analysis.length === 0) {
+      return [];
+    }
     const byIndex = new Map(analysis.map((a) => [a.move_index, a]));
     const classes: string[] = [];
     for (let i = 0; i < fens.length - 1; i++) {
@@ -218,22 +246,10 @@ export function Analysis() {
         classes.push("");
         continue;
       }
-      const scoreBefore =
-        before.score_mate !== null
-          ? before.score_mate > 0 ? 1000 : -1000
-          : (before.score_cp ?? 0);
-      const scoreAfter =
-        after.score_mate !== null
-          ? after.score_mate > 0 ? 1000 : -1000
-          : (after.score_cp ?? 0);
       const isWhiteMove = i % 2 === 0;
-      const swing = isWhiteMove
-        ? scoreAfter - scoreBefore
-        : scoreBefore - scoreAfter;
-      if (swing < -300) classes.push("text-red-500 font-bold");
-      else if (swing < -100) classes.push("text-orange-500 font-semibold");
-      else if (swing < -50) classes.push("text-yellow-500");
-      else classes.push("");
+      const diff = evalCp(after) - evalCp(before);
+      const swing = isWhiteMove ? diff : -diff;
+      classes.push(classifySwing(swing));
     }
     return classes;
   }, [analysis, fens.length]);
@@ -374,12 +390,14 @@ export function Analysis() {
         {/* Move navigation controls */}
         <div className="mt-3 flex items-center justify-center gap-2">
           <button
+            type="button"
             onClick={() => setCurrentMove(0)}
             className="px-3 py-1 text-sm rounded bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300"
           >
             &laquo;
           </button>
           <button
+            type="button"
             onClick={() => setCurrentMove(Math.max(0, currentMove - 1))}
             className="px-3 py-1 text-sm rounded bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300"
           >
@@ -389,12 +407,14 @@ export function Analysis() {
             {currentMove} / {maxMove}
           </span>
           <button
+            type="button"
             onClick={() => setCurrentMove(Math.min(maxMove, currentMove + 1))}
             className="px-3 py-1 text-sm rounded bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300"
           >
             &rsaquo;
           </button>
           <button
+            type="button"
             onClick={() => setCurrentMove(maxMove)}
             className="px-3 py-1 text-sm rounded bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300"
           >
@@ -402,6 +422,7 @@ export function Analysis() {
           </button>
           <div className="w-px h-5 bg-gray-300 dark:bg-gray-600 mx-1" />
           <button
+            type="button"
             onClick={() => setUserFlipped((f) => !f)}
             className="px-3 py-1 text-sm rounded bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300"
             title="Flip board"
