@@ -3,12 +3,13 @@ import { useParams, useSearchParams, Link } from "react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { DrawShape } from "@lichess-org/chessground/draw";
 import type { Key } from "@lichess-org/chessground/types";
-import { fetchGame, fetchGameMetrics, type AnalysisRow, type GameMove, type GameMetrics } from "../api";
+import { fetchGame, fetchGameMetrics, fetchAlternatives, type AnalysisRow, type GameMove, type GameMetrics } from "../api";
 import { ChessBoard } from "../components/ChessBoard";
 import { EvalBar } from "../components/EvalBar";
 import { EvalGraph } from "../components/EvalGraph";
 import { MoveList } from "../components/MoveList";
 import { RecurrencePanel } from "../components/RecurrencePanel";
+import { AlternativesPanel } from "../components/AlternativesPanel";
 import { classifySwing, type MoveClass } from "../lib/classify";
 
 function accuracyChipClass(acc: number): string {
@@ -84,6 +85,8 @@ export function Analysis() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [progress, setProgress] = useState(0);
   const [userFlipped, setUserFlipped] = useState(false);
+  const [deepEnabled, setDeepEnabled] = useState(false);
+  const [deepProgress, setDeepProgress] = useState(0);
 
   // Seed analysis state from query data when it loads. SSE results extend this
   // array in-place, so we need state — pure derivation is not enough.
@@ -238,6 +241,7 @@ export function Analysis() {
         score_cp: eventData.scoreCp,
         score_mate: eventData.scoreMate,
         best_move: eventData.bestMove,
+        pv: null,
         depth: eventData.depth,
       });
 
@@ -256,6 +260,52 @@ export function Analysis() {
       eventSource.close();
     };
   }, [game, analyzed, queryClient]);
+
+  // Open a separate EventSource for MultiPV=3 deep analysis when deepEnabled flips true.
+  useEffect(() => {
+    if (!deepEnabled || game === undefined) {
+      return;
+    }
+    const eventSource = new EventSource(`/api/analyze/${game.id}?multipv=3`);
+    eventSource.onmessage = (event: MessageEvent<string>) => {
+      const eventData = JSON.parse(event.data) as {
+        done?: boolean;
+        error?: string;
+        moveIndex?: number;
+        total?: number;
+      };
+      if (eventData.done === true) {
+        eventSource.close();
+        setDeepProgress(100);
+        void queryClient.invalidateQueries({ queryKey: ["alternatives", game.id] });
+        return;
+      }
+      if (eventData.error !== undefined) {
+        eventSource.close();
+        return;
+      }
+      if (
+        eventData.moveIndex !== undefined &&
+        eventData.total !== undefined &&
+        eventData.total > 0
+      ) {
+        setDeepProgress(((eventData.moveIndex + 1) / eventData.total) * 100);
+      }
+    };
+    eventSource.onerror = () => {
+      eventSource.close();
+    };
+    return () => {
+      eventSource.close();
+    };
+  }, [deepEnabled, game, queryClient]);
+
+  // Fetch top-3 alternatives for the current position when deep analysis is enabled.
+  const { data: alts } = useQuery({
+    queryKey: ["alternatives", game?.id ?? "", currentMove],
+    queryFn: async () => fetchAlternatives(game?.id ?? "", currentMove),
+    enabled: deepEnabled && game !== undefined,
+  });
 
   // Pre-indexed scores: scores[moveIndex] → pawns. Built once when analysis changes.
   const scores = useMemo(() => {
@@ -288,12 +338,32 @@ export function Analysis() {
   const currentScore = scores[currentMove] ?? 0;
   const currentMate = scoreMates[currentMove] ?? null;
 
-  // Arrow shape for Stockfish's recommended best move from the current position.
+  // Arrow shapes for Stockfish's recommended best move(s) from the current position.
+  // Rank-1 arrow is always blue; ranks 2 and 3 use paleBlue/green when deep analysis loaded.
   const bestMoveShapes = useMemo((): DrawShape[] => {
     const bm = bestMoves[currentMove];
-    if (bm === undefined || bm.length < 4) {return EMPTY_SHAPES;}
-    return [{ orig: bm.slice(0, 2) as Key, dest: bm.slice(2, 4) as Key, brush: "blue" }];
-  }, [bestMoves, currentMove]);
+    const shapes: DrawShape[] = [];
+    if (bm !== undefined && bm.length >= 4) {
+      shapes.push({ orig: bm.slice(0, 2) as Key, dest: bm.slice(2, 4) as Key, brush: "blue" });
+    }
+    if (alts !== undefined) {
+      const brushes: string[] = ["blue", "paleBlue", "green"];
+      for (const alt of alts.alternatives) {
+        if (alt.multipvRank === 1) {
+          continue; // already drawn above
+        }
+        const move = alt.bestMove;
+        if (move.length >= 4) {
+          shapes.push({
+            orig: move.slice(0, 2) as Key,
+            dest: move.slice(2, 4) as Key,
+            brush: brushes[alt.multipvRank - 1] ?? "green",
+          });
+        }
+      }
+    }
+    return shapes.length > 0 ? shapes : EMPTY_SHAPES;
+  }, [bestMoves, currentMove, alts]);
 
   // Build eval data for graph — only recomputes when analysis changes.
   const evalData = useMemo(
@@ -443,6 +513,14 @@ export function Analysis() {
               </div>
             )}
           </div>
+          <button
+            type="button"
+            onClick={() => { setDeepEnabled(true); }}
+            disabled={deepEnabled}
+            className="px-3 py-1 text-sm rounded bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200 disabled:opacity-50"
+          >
+            {deepEnabled ? `Deep ${String(Math.round(deepProgress))}%` : "Deep analysis"}
+          </button>
           {isAnalyzing && (
             <div className="flex items-center gap-2">
               <div className="w-32 h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
@@ -601,6 +679,15 @@ export function Analysis() {
             fen={fens[currentMove]}
             username={game.username}
             currentGameId={game.id}
+          />
+        )}
+
+        {/* Alternatives Panel — top engine lines for the current position (deep analysis) */}
+        {deepEnabled && (
+          <AlternativesPanel
+            gameId={game.id}
+            moveIndex={currentMove}
+            playedMove={moves[currentMove - 1]?.san}
           />
         )}
       </main>

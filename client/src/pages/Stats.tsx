@@ -5,12 +5,14 @@ import {
   fetchBySide,
   fetchWinRateSlice,
   fetchEloTrend,
+  fetchAclTrend,
   fetchByTimeOfDay,
   type WinRateSliceType,
 } from "../api";
 import { EloTrendChart } from "../components/EloTrendChart";
+import { AclTrendChart } from "../components/AclTrendChart";
 
-type Tab = "by-side" | "time-class" | "opening" | "rating" | "elo-trend" | "time-of-day";
+type Tab = "by-side" | "time-class" | "opening" | "rating" | "elo-trend" | "acl-trend" | "time-of-day";
 
 const TAB_LABELS: Record<Tab, string> = {
   "by-side": "By Side",
@@ -18,6 +20,7 @@ const TAB_LABELS: Record<Tab, string> = {
   "opening": "By Opening",
   "rating": "By Rating",
   "elo-trend": "Elo Trend",
+  "acl-trend": "ACL Trend",
   "time-of-day": "Time of Day",
 };
 
@@ -78,6 +81,7 @@ export function Stats() {
           {tab === "opening" && <SliceTab username={username} slice="opening" />}
           {tab === "rating" && <SliceTab username={username} slice="rating_bucket" />}
           {tab === "elo-trend" && <EloTrendTab username={username} />}
+          {tab === "acl-trend" && <AclTrendTab username={username} />}
           {tab === "time-of-day" && <TimeOfDayTab username={username} />}
         </div>
       </main>
@@ -236,6 +240,61 @@ function EloTrendTab({ username }: EloTrendTabProps) {
             className={`px-3 py-1 rounded text-sm ${
               tc === t
                 ? "bg-blue-600 text-white"
+                : "bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300"
+            }`}
+          >
+            {t}
+          </button>
+        ))}
+      </div>
+      {body}
+    </div>
+  );
+}
+
+// ---- ACL trend ----
+
+const ACL_TIME_CLASSES = ["bullet", "blitz", "rapid", "daily"] as const;
+type AclTimeClass = (typeof ACL_TIME_CLASSES)[number];
+
+interface AclTrendTabProps {
+  username: string;
+}
+
+function AclTrendTab({ username }: AclTrendTabProps) {
+  const [tc, setTc] = useState<AclTimeClass>("blitz");
+  const { data, isPending, isError } = useQuery({
+    queryKey: ["stats", "acl-trend", username, tc],
+    queryFn: async () => fetchAclTrend(username, tc),
+  });
+
+  const hasData = data !== undefined && data.length > 0;
+  const isEmpty = data?.length === 0;
+
+  let body: ReactNode;
+  if (isPending) {
+    body = <p className="text-gray-500">Loading&hellip;</p>;
+  } else if (isError) {
+    body = <p className="text-red-500">Error.</p>;
+  } else if (isEmpty) {
+    body = <p className="text-gray-500">No data for {tc}.</p>;
+  } else if (hasData) {
+    body = <AclTrendChart data={data} />;
+  } else {
+    body = null;
+  }
+
+  return (
+    <div>
+      <div className="flex gap-2 mb-3">
+        {ACL_TIME_CLASSES.map((t) => (
+          <button
+            key={t}
+            type="button"
+            onClick={() => { setTc(t); }}
+            className={`px-3 py-1 rounded text-sm ${
+              tc === t
+                ? "bg-amber-500 text-white"
                 : "bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300"
             }`}
           >

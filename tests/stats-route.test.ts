@@ -1,7 +1,7 @@
 import { describe, expect, test, beforeEach } from "bun:test";
 import { Database } from "bun:sqlite";
 import { migrations, type Migration } from "../server/lib/db";
-import { computeBySide, computeEloTrend, computeByTimeOfDay, computeWinRateSlice } from "../server/routes/stats";
+import { computeBySide, computeEloTrend, computeByTimeOfDay, computeWinRateSlice, computeAclTrend } from "../server/routes/stats";
 
 // ---------------------------------------------------------------------------
 // Schema helpers — apply migrations 1-4 to an in-memory DB
@@ -589,5 +589,95 @@ describe("computeWinRateSlice — avg_accuracy", () => {
     expect(white).toBeDefined();
     // AVG of white accuracy: (80 + 90) / 2 = 85
     expect(white!.avg_accuracy).toBeCloseTo(85.0, 5);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Helper for ACL trend tests
+// ---------------------------------------------------------------------------
+
+function insertGameWithAcl(
+  database: Database,
+  id: string,
+  username: string,
+  white: string,
+  black: string,
+  timeClass: string,
+  endTime: number,
+  aclWhite: number,
+  aclBlack: number,
+): void {
+  database
+    .prepare(
+      `INSERT INTO games (id, username, pgn, white, black, result, time_class, end_time)
+       VALUES (?, ?, '', ?, ?, '', ?, ?)`,
+    )
+    .run(id, username, white, black, timeClass, endTime);
+  database
+    .prepare(
+      `INSERT INTO game_metrics
+         (game_id, accuracy_white, accuracy_black,
+          blunders_white, mistakes_white, inaccuracies_white,
+          blunders_black, mistakes_black, inaccuracies_black,
+          acl_white, acl_black, computed_at)
+       VALUES (?, 0, 0, 0, 0, 0, 0, 0, 0, ?, ?, 0)`,
+    )
+    .run(id, aclWhite, aclBlack);
+}
+
+// ---------------------------------------------------------------------------
+// computeAclTrend
+// ---------------------------------------------------------------------------
+
+describe("computeAclTrend", () => {
+  test("returns 3 blitz points with correct user-side ACL (2 white, 1 black)", () => {
+    // g1: alice plays white → acl = acl_white = 30
+    insertGameWithAcl(db, "g1", "alice", "alice", "bob", "blitz", 1000, 30, 50);
+    // g2: alice plays black → acl = acl_black = 45
+    insertGameWithAcl(db, "g2", "alice", "bob", "alice", "blitz", 2000, 20, 45);
+    // g3: alice plays white → acl = acl_white = 10
+    insertGameWithAcl(db, "g3", "alice", "alice", "bob", "blitz", 3000, 10, 60);
+
+    const result = computeAclTrend(db, "alice", "blitz");
+
+    expect(result).toHaveLength(3);
+    expect(result[0]).toEqual({ t: 1000, acl: 30 });
+    expect(result[1]).toEqual({ t: 2000, acl: 45 });
+    expect(result[2]).toEqual({ t: 3000, acl: 10 });
+  });
+
+  test("games without game_metrics are excluded (JOIN not LEFT JOIN)", () => {
+    // game with metrics
+    insertGameWithAcl(db, "g1", "alice", "alice", "bob", "blitz", 1000, 25, 35);
+    // game without metrics
+    db.prepare(
+      `INSERT INTO games (id, username, pgn, white, black, result, time_class, end_time)
+       VALUES (?, ?, '', ?, ?, '', ?, ?)`,
+    ).run("g2", "alice", "alice", "bob", "blitz", 2000);
+
+    const result = computeAclTrend(db, "alice", "blitz");
+
+    expect(result).toHaveLength(1);
+    expect(result[0].t).toBe(1000);
+  });
+
+  test("time_class filter excludes games of other time classes", () => {
+    insertGameWithAcl(db, "g1", "alice", "alice", "bob", "blitz", 1000, 20, 30);
+    insertGameWithAcl(db, "g2", "alice", "alice", "bob", "rapid", 2000, 15, 25);
+    insertGameWithAcl(db, "g3", "alice", "alice", "bob", "blitz", 3000, 18, 28);
+
+    const result = computeAclTrend(db, "alice", "blitz");
+
+    expect(result).toHaveLength(2);
+    expect(result[0].t).toBe(1000);
+    expect(result[1].t).toBe(3000);
+  });
+
+  test("unknown user returns empty array", () => {
+    insertGameWithAcl(db, "g1", "alice", "alice", "bob", "blitz", 1000, 20, 30);
+
+    const result = computeAclTrend(db, "nobody", "blitz");
+
+    expect(result).toEqual([]);
   });
 });

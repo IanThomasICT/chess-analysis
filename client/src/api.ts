@@ -27,6 +27,7 @@ export interface AnalysisRow {
   score_cp: number | null;
   score_mate: number | null;
   best_move: string;
+  pv: string | null;
   depth: number;
 }
 
@@ -134,6 +135,24 @@ export interface EloTrendPoint {
   elo: number;
 }
 
+export interface AclTrendPoint {
+  t: number;
+  acl: number;
+}
+
+export async function fetchAclTrend(
+  username: string,
+  timeClass: "bullet" | "blitz" | "rapid" | "daily",
+): Promise<AclTrendPoint[]> {
+  const r = await fetch(
+    `/api/stats/${encodeURIComponent(username)}/acl-trend?time_class=${timeClass}`,
+  );
+  if (!r.ok) {
+    throw new Error("Failed to fetch ACL trend");
+  }
+  return r.json() as Promise<AclTrendPoint[]>;
+}
+
 export async function fetchEloTrend(
   username: string,
   timeClass: "bullet" | "blitz" | "rapid" | "daily",
@@ -198,6 +217,34 @@ export async function fetchPositionHistory(
     throw new Error("Failed to fetch position history");
   }
   return r.json() as Promise<PositionHistoryEntry[]>;
+}
+
+export interface AlternativeRow {
+  multipvRank: number;
+  scoreCp: number | null;
+  scoreMate: number | null;
+  bestMove: string;
+  pv: string | null;
+  depth: number;
+}
+
+export interface AlternativesResponse {
+  gameId: string;
+  moveIndex: number;
+  alternatives: AlternativeRow[];
+}
+
+export async function fetchAlternatives(
+  gameId: string,
+  moveIndex: number,
+): Promise<AlternativesResponse> {
+  const r = await fetch(
+    `/api/games/${encodeURIComponent(gameId)}/alternatives/${String(moveIndex)}`,
+  );
+  if (!r.ok) {
+    throw new Error("Failed to fetch alternatives");
+  }
+  return r.json() as Promise<AlternativesResponse>;
 }
 
 export async function fetchWinRateSlice(

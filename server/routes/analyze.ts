@@ -41,6 +41,9 @@ analyze.get("/analyze/:gameId", (c) => {
     return c.json({ error: "Failed to parse game data" }, 500);
   }
 
+  const multipvRaw = c.req.query("multipv");
+  const multipv = multipvRaw === "3" ? 3 : 1;
+
   if (!acquireAnalysisSlot()) {
     return c.json(
       { error: "Server is busy, please try again later" },
@@ -57,13 +60,15 @@ analyze.get("/analyze/:gameId", (c) => {
   const stream = new ReadableStream({
     async start(controller) {
       try {
-        for await (const result of analyzeGame(capturedGame.id, fens, moves)) {
+        for await (const result of analyzeGame(capturedGame.id, fens, moves, multipv)) {
           const data = JSON.stringify({
             moveIndex: result.moveIndex,
+            multipvRank: result.multipvRank,
             fen: result.fen,
             scoreCp: result.scoreCp,
             scoreMate: result.scoreMate,
             bestMove: result.bestMove,
+            pv: result.pv,
             depth: result.depth,
             total: result.total,
           });

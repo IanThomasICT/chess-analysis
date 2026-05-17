@@ -8,22 +8,35 @@ The analysis system has three layers:
 2. **SSE streaming endpoint** (`server/routes/analyze.ts`) -- streams results to the browser
 3. **Analysis UI** (`client/src/pages/Analysis.tsx`) -- renders board, eval bar, graph, move list
 
+## Deep analysis (MultiPV)
+
+The analyze SSE endpoint accepts `?multipv=3`. The engine is re-initialised with `MultiPV=3`, search time scales proportionally (`SEARCH_MOVETIME * 3`), and each position yields **three** SSE events (one per `multipvRank`, ordered 1..3 with rank 1 being the best line). All three are persisted to `analysis` with the composite PK `(game_id, move_index, multipv_rank)`.
+
+The UI exposes a "Deep analysis" toggle in the Analysis header. Once enabled:
+- Top-3 engine lines render as graduated arrows on the board (blue / paleBlue / green).
+- The `AlternativesPanel` shows the PVs with their evals, depth, and the move actually played.
+- A separate endpoint `GET /api/games/:gameId/alternatives/:moveIndex` returns the three ranks for a single position (used by `AlternativesPanel`).
+
+Single-PV analysis remains the default — most users will never trigger deep mode.
+
 ## Stockfish Service
 
 File: `server/lib/engine.ts`
 
 ### Process Lifecycle
 
-`spawnEngine()` creates a Stockfish subprocess via `Bun.spawn` and returns a `StockfishHandle`:
+`spawnEngine()` creates an engine subprocess (Stockfish or Lc0 depending on `ENGINE_TYPE`) via `Bun.spawn` and returns an `EngineHandle`:
 
 ```ts
-interface StockfishHandle {
+interface EngineHandle {
   sendCmd: (cmd: string) => void;
   reader: ReadableStreamDefaultReader<Uint8Array>;
-  init: () => Promise<void>;
+  init: (multipv?: number) => Promise<void>;
   cleanup: () => void;
 }
 ```
+
+`init(multipv)` sends `setoption name MultiPV value <n>` after the standard UCI handshake. `MultiPV=1` is the default (cheap, fast, ground-truth single-line analysis). `MultiPV=3` is requested opt-in via the SSE query `?multipv=3` — see "Deep analysis" below.
 
 - **stdin**: Bun's `FileSink`. Commands are written with `stdin.write()` + `stdin.flush()`.
 - **stdout**: `ReadableStream<Uint8Array>`. A reader is obtained via `.getReader()`.

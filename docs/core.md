@@ -143,17 +143,19 @@ Index: `idx_games_username` on `username`.
 
 ### `analysis`
 
-Per-position Stockfish evaluations. Composite PK `(game_id, move_index)`. This table is the **accuracy/blunder ground truth** — every metric eventually derives from it.
+Per-position Stockfish evaluations. Composite PK `(game_id, move_index, multipv_rank)`. This table is the **accuracy/blunder ground truth** — every metric eventually derives from it.
 
 | Column | Type | Description |
 |---|---|---|
 | `game_id` | TEXT NOT NULL | FK to `games.id` |
 | `move_index` | INTEGER NOT NULL | Position index (0 = starting position) |
+| `multipv_rank` | INTEGER NOT NULL DEFAULT 1 | 1 = engine's top line; 2/3 from deep analysis |
 | `fen` | TEXT NOT NULL | FEN string for this position |
-| `move_san` | TEXT | SAN of move that led here (null for index 0) |
+| `move_san` | TEXT | SAN of move that led here (null for index 0; null for rank > 1) |
 | `score_cp` | INTEGER | Centipawn score (null if mate) |
 | `score_mate` | INTEGER | Mate-in-N (null if centipawn) |
-| `best_move` | TEXT | Stockfish's recommended move (UCI) |
+| `best_move` | TEXT | Engine's recommended move (UCI) — first PV move |
+| `pv` | TEXT | Space-separated UCI moves for the full PV (multipv only) |
 | `depth` | INTEGER | Search depth used |
 | `fen_key` | TEXT | First 4 FEN fields (board/side/castling/ep) for transposition match |
 
@@ -239,6 +241,8 @@ client/
       StatsPanel.tsx       # Home page by-side breakdown panel
       EloTrendChart.tsx    # uPlot line chart for /stats Elo trend tab
       RecurrencePanel.tsx  # Position-recurrence list on Analysis page
+      AlternativesPanel.tsx # Top-3 engine PVs (deep-analysis mode)
+      AclTrendChart.tsx    # uPlot ACL trend on /stats page
       GameCard.tsx         # Gallery card for a single game
 
 server/

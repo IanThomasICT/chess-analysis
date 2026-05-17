@@ -444,4 +444,44 @@ games.get("/games/:gameId/metrics", (c) => {
   return c.json(result);
 });
 
+games.get("/games/:gameId/alternatives/:moveIndex", (c) => {
+  const gameId = c.req.param("gameId");
+  if (!GAME_ID_PATTERN.test(gameId)) {
+    return c.json({ error: "Invalid game ID format" }, 400);
+  }
+  const moveIndexStr = c.req.param("moveIndex");
+  const moveIndex = parseInt(moveIndexStr, 10);
+  if (Number.isNaN(moveIndex) || moveIndex < 0) {
+    return c.json({ error: "Invalid moveIndex" }, 400);
+  }
+  interface AltRow {
+    multipv_rank: number;
+    score_cp: number | null;
+    score_mate: number | null;
+    best_move: string;
+    pv: string | null;
+    depth: number;
+  }
+  const rows = db
+    .prepare(
+      `SELECT multipv_rank, score_cp, score_mate, best_move, pv, depth
+         FROM analysis
+        WHERE game_id = ? AND move_index = ?
+        ORDER BY multipv_rank ASC`,
+    )
+    .all(gameId, moveIndex) as AltRow[];
+  return c.json({
+    gameId,
+    moveIndex,
+    alternatives: rows.map((r) => ({
+      multipvRank: r.multipv_rank,
+      scoreCp: r.score_cp,
+      scoreMate: r.score_mate,
+      bestMove: r.best_move,
+      pv: r.pv,
+      depth: r.depth,
+    })),
+  });
+});
+
 export default games;

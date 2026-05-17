@@ -137,6 +137,38 @@ export const migrations: Migration[] = [
       );
     },
   },
+  {
+    // Migration #7 — rebuild analysis with composite PK (game_id, move_index, multipv_rank)
+    // and add pv column for principal variation (MultiPV-ready, P4.1)
+    id: 7,
+    up: (database: Database) => {
+      database.run("ALTER TABLE analysis RENAME TO analysis_old");
+      database.run(`
+        CREATE TABLE analysis (
+          game_id TEXT NOT NULL,
+          move_index INTEGER NOT NULL,
+          multipv_rank INTEGER NOT NULL DEFAULT 1,
+          fen TEXT NOT NULL,
+          fen_key TEXT,
+          move_san TEXT,
+          score_cp INTEGER,
+          score_mate INTEGER,
+          best_move TEXT,
+          pv TEXT,
+          depth INTEGER,
+          PRIMARY KEY (game_id, move_index, multipv_rank)
+        )
+      `);
+      database.run(`
+        INSERT INTO analysis (game_id, move_index, multipv_rank, fen, fen_key, move_san, score_cp, score_mate, best_move, pv, depth)
+        SELECT game_id, move_index, 1, fen, fen_key, move_san, score_cp, score_mate, best_move, NULL, depth FROM analysis_old
+      `);
+      database.run("DROP TABLE analysis_old");
+      database.run("CREATE INDEX IF NOT EXISTS idx_analysis_game_id ON analysis(game_id)");
+      database.run("CREATE INDEX IF NOT EXISTS idx_analysis_fen ON analysis(fen)");
+      database.run("CREATE INDEX IF NOT EXISTS idx_analysis_fen_key ON analysis(fen_key)");
+    },
+  },
 ];
 
 export function runMigrations(database: Database): void {

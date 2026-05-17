@@ -1,4 +1,5 @@
 import { describe, it, expect } from "bun:test";
+import { parseInfoLine } from "../server/lib/engine";
 
 // =====================================================================
 // UCI output parsing logic
@@ -314,5 +315,104 @@ describe("SSE message format", () => {
     const event = parseSseLine(raw) as SseProgressEvent;
     expect(event.scoreCp).toBeNull();
     expect(event.scoreMate).toBe(3);
+  });
+});
+
+// =====================================================================
+// parseInfoLine — MultiPV parsing unit tests
+// =====================================================================
+
+describe("parseInfoLine (multipv)", () => {
+  it("parses single-PV info line", () => {
+    const result = parseInfoLine(
+      "info depth 18 multipv 1 score cp 25 nodes 1000 pv e2e4 e7e5",
+    );
+    expect(result).not.toBeNull();
+    expect(result?.rank).toBe(1);
+    expect(result?.depth).toBe(18);
+    expect(result?.score.cp).toBe(25);
+    expect(result?.score.mate).toBeNull();
+    expect(result?.pv).toBe("e2e4 e7e5");
+  });
+
+  it("defaults rank to 1 when multipv token absent", () => {
+    const result = parseInfoLine(
+      "info depth 18 score cp 25 pv e2e4 e7e5",
+    );
+    expect(result?.rank).toBe(1);
+  });
+
+  it("parses rank 2 info line", () => {
+    const result = parseInfoLine(
+      "info depth 18 multipv 2 score cp 10 pv d2d4 d7d5",
+    );
+    expect(result?.rank).toBe(2);
+    expect(result?.score.cp).toBe(10);
+    expect(result?.pv).toBe("d2d4 d7d5");
+  });
+
+  it("parses rank 3 info line", () => {
+    const result = parseInfoLine(
+      "info depth 18 multipv 3 score cp -5 pv c2c4",
+    );
+    expect(result?.rank).toBe(3);
+    expect(result?.score.cp).toBe(-5);
+    expect(result?.pv).toBe("c2c4");
+  });
+
+  it("parses mate score", () => {
+    const result = parseInfoLine(
+      "info depth 18 multipv 2 score mate 3 pv e2e4",
+    );
+    expect(result?.score.mate).toBe(3);
+    expect(result?.score.cp).toBeNull();
+  });
+
+  it("parses negative mate score", () => {
+    const result = parseInfoLine(
+      "info depth 20 multipv 1 score mate -2 pv h4h1",
+    );
+    expect(result?.score.mate).toBe(-2);
+    expect(result?.score.cp).toBeNull();
+  });
+
+  it("returns null for aspiration window upperbound lines", () => {
+    expect(
+      parseInfoLine("info depth 18 score cp 25 upperbound pv e2e4"),
+    ).toBeNull();
+  });
+
+  it("returns null for aspiration window lowerbound lines", () => {
+    expect(
+      parseInfoLine("info depth 18 score cp 25 lowerbound pv e2e4"),
+    ).toBeNull();
+  });
+
+  it("returns null when no score field present", () => {
+    expect(
+      parseInfoLine("info depth 18 multipv 1 nodes 1000"),
+    ).toBeNull();
+  });
+
+  it("returns null for non-info lines", () => {
+    expect(parseInfoLine("bestmove e2e4 ponder e7e5")).toBeNull();
+    expect(parseInfoLine("uciok")).toBeNull();
+    expect(parseInfoLine("readyok")).toBeNull();
+  });
+
+  it("parses pv with many moves", () => {
+    const result = parseInfoLine(
+      "info depth 20 multipv 1 score cp 30 pv e2e4 e7e5 g1f3 b8c6 f1b5",
+    );
+    expect(result?.pv).toBe("e2e4 e7e5 g1f3 b8c6 f1b5");
+  });
+
+  it("returns empty pv string when pv token absent", () => {
+    const result = parseInfoLine(
+      "info depth 18 multipv 1 score cp 25 nodes 1000",
+    );
+    // score is present but no pv token — still returns a result (non-null)
+    expect(result).not.toBeNull();
+    expect(result?.pv).toBe("");
   });
 });
