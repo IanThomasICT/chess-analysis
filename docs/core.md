@@ -199,6 +199,19 @@ Migrations are defined inline in `server/lib/db.ts` as an append-only `migration
 
 `MAX_CONCURRENT_ANALYSES` is 1 for Lc0 (single-GPU contention), 2 for Stockfish.
 
+### `annotations`
+
+Manual notes layered onto Elo trend / stats views. CRUD endpoints deferred — render-only for Phase 2.
+
+| Column | Type | Description |
+|---|---|---|
+| `id` | INTEGER PK AUTOINCREMENT | row id |
+| `t` | INTEGER NOT NULL | unix epoch seconds |
+| `time_class` | TEXT NOT NULL | bullet/blitz/rapid/daily |
+| `text` | TEXT NOT NULL | freeform note |
+
+Index: `idx_annotations_time_class` on `(time_class, t)`.
+
 ### Shared classification
 
 `shared/classify.ts` — `MoveClass` enum (`"best" | "good" | "inaccuracy" | "mistake" | "blunder"`) and `classifySwing(wpDelta)` using Lichess thresholds (DESIGN D1). Imported by both client (`client/src/lib/classify.ts` re-export) and server (`server/lib/metrics.ts` once Phase 1 lands).
@@ -215,6 +228,7 @@ client/
     pages/
       Home.tsx             # Game gallery (index route)
       Analysis.tsx         # Analysis view
+      Stats.tsx            # Tabbed dashboards (by-side / opening / rating / elo trend / time-of-day)
     components/
       ChessBoard.tsx       # Chessground wrapper (React.memo)
       EvalBar.tsx          # Vertical evaluation bar (React.memo)
@@ -222,6 +236,7 @@ client/
       MoveList.tsx         # Scrollable move list with annotations (React.memo)
       GameCard.tsx         # Gallery card; accuracy/blunder chips when metrics present
       StatsPanel.tsx       # Home page by-side breakdown panel
+      EloTrendChart.tsx    # uPlot line chart for /stats Elo trend tab
       GameCard.tsx         # Gallery card for a single game
 
 server/
@@ -229,14 +244,17 @@ server/
   routes/
     games.ts               # GET /api/games, GET /api/games/:gameId, /:id/metrics, /metrics?username=
     analyze.ts             # GET /api/analyze/:gameId (SSE stream; invalidates game_metrics)
-    stats.ts               # GET /api/stats/:username/by-side
+    stats.ts               # /api/stats/:user/{by-side,win-rate,elo-trend,by-time-of-day}
+  data/
+    openings/{a..e}.tsv    # lichess-org/chess-openings (CC0)
   lib/
     db.ts                  # SQLite singleton + schema + migration runner
     chesscom.ts            # Chess.com PubAPI client
     engine.ts              # UCI subprocess (Stockfish/Lc0) + analysis generator
     pgn.ts                 # PGN -> FEN/move parsing + pgnHeaders (chess.js)
-    backfill.ts            # Idempotent header backfill on startup
+    backfill.ts            # Idempotent header + opening backfill on startup
     metrics.ts             # Lichess D1 formulas + gameMetrics() per-side aggregator
+    openings.ts            # ECO/Opening TSV loader + classifyOpening longest-prefix match
     rate-limit.ts          # Per-IP in-memory rate limiter
 
 shared/

@@ -1,6 +1,7 @@
 import type { Database } from "bun:sqlite";
 import { db } from "./db";
-import { pgnHeaders } from "./pgn";
+import { pgnHeaders, pgnToMoves } from "./pgn";
+import { classifyOpening, loadOpenings } from "./openings";
 
 interface GameToBackfill {
   id: string;
@@ -16,6 +17,8 @@ interface GameToBackfill {
  * Safe to run on every server start — the WHERE clause limits to unprocessed rows.
  */
 export function backfillGameHeaders(database: Database = db): number {
+  loadOpenings(); // idempotent — no-op if already loaded
+
   const rows = database
     .prepare(
       `SELECT id, username, pgn, white, black FROM games WHERE white_elo IS NULL`,
@@ -40,8 +43,23 @@ export function backfillGameHeaders(database: Database = db): number {
       const userColor =
         g.username.toLowerCase() === g.white.toLowerCase() ? "w" : "b";
       const userElo = userColor === "w" ? whiteElo : blackElo;
-      const eco = normalizeHeader(h.ECO);
-      const opening = normalizeHeader(h.Opening);
+      let eco = normalizeHeader(h.ECO);
+      let opening = normalizeHeader(h.Opening);
+
+      if (eco === null || opening === null) {
+        // Hybrid fallback — classify from move sequence
+        try {
+          const moves = pgnToMoves(g.pgn).map((m) => m.san);
+          const classified = classifyOpening(moves);
+          if (classified !== null) {
+            eco ??= classified.eco;
+            opening ??= classified.name;
+          }
+        } catch {
+          // PGN parse failure — leave eco/opening as-is (likely both null)
+        }
+      }
+
       update.run(whiteElo, blackElo, userElo, eco, opening, g.id);
     }
   });

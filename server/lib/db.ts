@@ -112,6 +112,21 @@ export const migrations: Migration[] = [
       `);
     },
   },
+  {
+    // Migration #5 — annotations table (render-only for now; CRUD endpoints deferred)
+    id: 5,
+    up: (database: Database) => {
+      database.run(`
+        CREATE TABLE IF NOT EXISTS annotations (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          t INTEGER NOT NULL,
+          time_class TEXT NOT NULL,
+          text TEXT NOT NULL
+        )
+      `);
+      database.run(`CREATE INDEX IF NOT EXISTS idx_annotations_time_class ON annotations(time_class, t)`);
+    },
+  },
 ];
 
 export function runMigrations(database: Database): void {

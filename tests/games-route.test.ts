@@ -7,6 +7,9 @@ import {
 } from "../server/routes/games";
 import type { ChessComGame } from "../server/lib/chesscom";
 import { migrations } from "../server/lib/db";
+import { loadOpenings } from "../server/lib/openings";
+
+loadOpenings();
 
 // ---------------------------------------------------------------------------
 // PGN fixtures
@@ -40,6 +43,15 @@ const NO_ELO_PGN = `[Event "Live Chess"]
 [Result "1/2-1/2"]
 
 1. d4 d5 1/2-1/2`;
+
+const KINGS_INDIAN_NO_ECO_PGN = `[Event "Live Chess"]
+[White "Alice"]
+[Black "Bob"]
+[WhiteElo "1600"]
+[BlackElo "1550"]
+[Result "1-0"]
+
+1. d4 Nf6 2. c4 g6 1-0`;
 
 // ---------------------------------------------------------------------------
 // Factory helpers
@@ -79,10 +91,11 @@ describe("buildGameRow", () => {
     expect(row.black_elo).toBe(1450);
   });
 
-  test("PGN without ECO header → eco is null, opening is null", () => {
+  test("PGN without ECO header → hybrid fallback classifies from moves", () => {
+    // NO_ECO_PGN uses 1. e4 e5 → hybrid fallback → C20 "King's Pawn Game"
     const row = buildGameRow("alice", makeGame({ pgn: NO_ECO_PGN }));
-    expect(row.eco).toBeNull();
-    expect(row.opening).toBeNull();
+    expect(row.eco).toBe("C20");
+    expect(row.opening).toBe("King's Pawn Game");
   });
 
   test("PGN without WhiteElo/BlackElo headers → whiteElo and blackElo are null", () => {
@@ -131,6 +144,20 @@ describe("buildGameRow", () => {
     });
     const row = buildGameRow("alice", g);
     expect(row.result).toBe("1/2-1/2");
+  });
+
+  test("hybrid fallback: d4 Nf6 c4 g6 with no ECO header → eco starts with E", () => {
+    const row = buildGameRow("alice", makeGame({ pgn: KINGS_INDIAN_NO_ECO_PGN }));
+    expect(row.eco).not.toBeNull();
+    expect(row.eco?.startsWith("E")).toBe(true);
+    expect(row.opening).not.toBeNull();
+  });
+
+  test("hybrid fallback: header ECO present → header value is NOT overridden by hybrid", () => {
+    // FULL_PGN has ECO "C50" and Opening "Italian Game" in headers
+    const row = buildGameRow("alice", makeGame({ pgn: FULL_PGN }));
+    expect(row.eco).toBe("C50");
+    expect(row.opening).toBe("Italian Game");
   });
 });
 

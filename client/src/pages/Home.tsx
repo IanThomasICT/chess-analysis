@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { useSearchParams } from "react-router";
+import { Link, useSearchParams } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import {
   fetchGames,
@@ -141,6 +141,14 @@ export function Home() {
           <h1 className="text-xl font-bold text-gray-900 dark:text-white">
             Chess Analyzer
           </h1>
+          {usernameParam !== "" && (
+            <Link
+              to={`/stats?username=${encodeURIComponent(usernameParam)}`}
+              className="px-3 py-1.5 text-sm font-medium rounded-md bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600"
+            >
+              Stats &rarr;
+            </Link>
+          )}
           <form onSubmit={handleSubmit} className="flex gap-2">
             <input
               key={usernameParam}

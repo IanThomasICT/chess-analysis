@@ -5,6 +5,7 @@ import { fetchRecentGames, type ChessComGame } from "../lib/chesscom";
 import { pgnToFens, pgnToMoves, pgnHeaders } from "../lib/pgn";
 import { isGameAnalyzed, getGameAnalysis, type AnalysisRow } from "../lib/engine";
 import { parseEloHeader } from "../lib/backfill";
+import { classifyOpening } from "../lib/openings";
 import { gameMetrics } from "../lib/metrics";
 
 const BULK_COMPUTE_LIMIT = 20;
@@ -76,8 +77,21 @@ export function buildGameRow(
   const userColor =
     username.toLowerCase() === g.white.username.toLowerCase() ? "w" : "b";
   const user_elo = userColor === "w" ? white_elo : black_elo;
-  const eco = normalizeHeader(h.ECO);
-  const opening = normalizeHeader(h.Opening);
+  let eco = normalizeHeader(h.ECO);
+  let opening = normalizeHeader(h.Opening);
+
+  if (eco === null || opening === null) {
+    try {
+      const moves = pgnToMoves(g.pgn).map((m) => m.san);
+      const classified = classifyOpening(moves);
+      if (classified !== null) {
+        eco ??= classified.eco;
+        opening ??= classified.name;
+      }
+    } catch {
+      // ignore PGN parse failures
+    }
+  }
 
   return {
     id: gameId,

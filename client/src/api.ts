@@ -127,3 +127,66 @@ export async function fetchBySide(username: string): Promise<BySideStats> {
   }
   return r.json() as Promise<BySideStats>;
 }
+
+export interface EloTrendPoint {
+  t: number;
+  elo: number;
+}
+
+export async function fetchEloTrend(
+  username: string,
+  timeClass: "bullet" | "blitz" | "rapid" | "daily",
+): Promise<EloTrendPoint[]> {
+  const r = await fetch(
+    `/api/stats/${encodeURIComponent(username)}/elo-trend?time_class=${timeClass}`,
+  );
+  if (!r.ok) {
+    throw new Error("Failed to fetch Elo trend");
+  }
+  return r.json() as Promise<EloTrendPoint[]>;
+}
+
+export interface TimeOfDayBucket {
+  hour: number;
+  day: number;
+  games: number;
+  wins: number;
+  win_rate: number;
+}
+
+export async function fetchByTimeOfDay(username: string): Promise<TimeOfDayBucket[]> {
+  const r = await fetch(`/api/stats/${encodeURIComponent(username)}/by-time-of-day`);
+  if (!r.ok) {
+    throw new Error("Failed to fetch time-of-day stats");
+  }
+  return r.json() as Promise<TimeOfDayBucket[]>;
+}
+
+export type WinRateSliceType = "color" | "time_class" | "rating_bucket" | "opening";
+
+export interface WinRateSliceRow {
+  key: string;
+  games: number;
+  wins: number;
+  draws: number;
+  losses: number;
+  win_rate: number;
+  avg_accuracy: number | null;
+  opening?: string;
+}
+
+export async function fetchWinRateSlice(
+  username: string,
+  slice: WinRateSliceType,
+  from?: number,
+  to?: number,
+): Promise<WinRateSliceRow[]> {
+  const params = new URLSearchParams({ slice });
+  if (from !== undefined) {params.set("from", String(from));}
+  if (to !== undefined) {params.set("to", String(to));}
+  const r = await fetch(`/api/stats/${encodeURIComponent(username)}/win-rate?${params.toString()}`);
+  if (!r.ok) {
+    throw new Error("Failed to fetch win-rate slice");
+  }
+  return r.json() as Promise<WinRateSliceRow[]>;
+}

@@ -7,7 +7,9 @@ import analyze from "./routes/analyze";
 import stats from "./routes/stats";
 import { rateLimit } from "./lib/rate-limit";
 import { backfillGameHeaders } from "./lib/backfill";
+import { loadOpenings } from "./lib/openings";
 
+loadOpenings();
 const backfillCount = backfillGameHeaders();
 if (backfillCount > 0) {
   console.log(`Backfilled headers for ${String(backfillCount)} games`);

@@ -2,6 +2,7 @@ import { describe, expect, test, beforeEach } from "bun:test";
 import { Database } from "bun:sqlite";
 import type { Migration } from "../server/lib/db";
 import { backfillGameHeaders } from "../server/lib/backfill";
+import { loadOpenings } from "../server/lib/openings";
 
 // ---------------------------------------------------------------------------
 // Schema helpers — mirrors db.ts bootstrap + migrations 1-3
@@ -119,6 +120,15 @@ const NO_ECO_PGN = `[Event "Live Chess"]
 
 const EMPTY_PGN = ``;
 
+const SICILIAN_NO_ECO_PGN = `[Event "Live Chess"]
+[White "Alice"]
+[Black "Bob"]
+[WhiteElo "1600"]
+[BlackElo "1550"]
+[Result "1-0"]
+
+1. e4 c5 2. Nf3 1-0`;
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -156,14 +166,15 @@ describe("backfillGameHeaders", () => {
     expect(second).toBe(0);
   });
 
-  test("game with missing ECO header — eco is null, other fields populated", () => {
+  test("game with missing ECO header — hybrid fallback populates eco/opening from moves", () => {
     insertGame(db, "g1", "alice", "Alice", "Bob", NO_ECO_PGN);
 
     backfillGameHeaders(db);
 
     const row = getGame(db, "g1");
-    expect(row?.eco).toBeNull();
-    expect(row?.opening).toBeNull();
+    // Hybrid fallback: 1. e4 e5 → C20 "King's Pawn Game"
+    expect(row?.eco).toBe("C20");
+    expect(row?.opening).toBe("King's Pawn Game");
     expect(row?.white_elo).toBe(1500);
     expect(row?.black_elo).toBe(1450);
   });
@@ -213,5 +224,30 @@ describe("backfillGameHeaders", () => {
 
     const g1 = getGame(db, "g1");
     expect(g1?.white_elo).toBe(9999); // untouched
+  });
+
+  test("hybrid fallback: Sicilian moves with no ECO header → eco starts with B, name contains Sicilian", () => {
+    loadOpenings();
+    insertGame(db, "g1", "alice", "Alice", "Bob", SICILIAN_NO_ECO_PGN);
+
+    backfillGameHeaders(db);
+
+    const row = getGame(db, "g1");
+    expect(row?.eco).not.toBeNull();
+    expect(row?.eco?.startsWith("B")).toBe(true);
+    expect(row?.opening).not.toBeNull();
+    expect(row?.opening?.toLowerCase()).toContain("sicilian");
+  });
+
+  test("hybrid fallback: header ECO present → header value is NOT overridden", () => {
+    loadOpenings();
+    // FULL_PGN has ECO "C50" and Opening "Italian Game" in headers
+    insertGame(db, "g1", "alice", "Alice", "Bob", FULL_PGN);
+
+    backfillGameHeaders(db);
+
+    const row = getGame(db, "g1");
+    expect(row?.eco).toBe("C50");
+    expect(row?.opening).toBe("Italian Game");
   });
 });
