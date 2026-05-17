@@ -4,17 +4,17 @@
 
 The analysis system has three layers:
 
-1. **Stockfish subprocess** (`server/lib/stockfish.ts`) -- UCI protocol over stdin/stdout
+1. **Stockfish subprocess** (`server/lib/engine.ts`) -- UCI protocol over stdin/stdout
 2. **SSE streaming endpoint** (`server/routes/analyze.ts`) -- streams results to the browser
 3. **Analysis UI** (`client/src/pages/Analysis.tsx`) -- renders board, eval bar, graph, move list
 
 ## Stockfish Service
 
-File: `server/lib/stockfish.ts`
+File: `server/lib/engine.ts`
 
 ### Process Lifecycle
 
-`spawnStockfish()` creates a Stockfish subprocess via `Bun.spawn` and returns a `StockfishHandle`:
+`spawnEngine()` creates a Stockfish subprocess via `Bun.spawn` and returns a `StockfishHandle`:
 
 ```ts
 interface StockfishHandle {

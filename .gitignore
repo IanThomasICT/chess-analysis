@@ -4,10 +4,15 @@
 
 # Build output
 /build/
+/shared/dist/
 *.tsbuildinfo
 
 # SQLite
 analysis.db
 analysis.db-*
-test_analysis.db
-test_analysis.db-*
+test_*.db
+test_*.db-*
+
+# Lc0 weights
+*.pb.gz
+weights/

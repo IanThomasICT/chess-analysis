@@ -1,19 +1,18 @@
 {
   "compilerOptions": {
     "lib": ["ES2022"],
-    "types": ["bun"],
     "target": "ES2022",
     "module": "ES2022",
     "moduleResolution": "bundler",
-    "baseUrl": ".",
     "esModuleInterop": true,
     "verbatimModuleSyntax": true,
-    "noEmit": true,
-    "resolveJsonModule": true,
+    "declaration": true,
+    "declarationMap": true,
+    "outDir": "dist",
     "skipLibCheck": true,
     "strict": true,
     "composite": true
   },
-  "include": ["./**/*"],
-  "references": [{ "path": "../shared" }]
+  "include": ["**/*.ts"],
+  "exclude": ["dist"]
 }

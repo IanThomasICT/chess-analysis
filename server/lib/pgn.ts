@@ -52,9 +52,25 @@ export function pgnToMoves(pgn: string): MoveInfo[] {
 }
 
 /**
+ * Parse all PGN header tags and return them as a key→value record.
+ * Matches lines of the form [Key "Value"]. Returns {} if no headers are found.
+ */
+export type PgnHeaders = Partial<Record<string, string>>;
+
+export function pgnHeaders(pgn: string): PgnHeaders {
+  const result: PgnHeaders = {};
+  const re = /^\[(\w+)\s+"([^"]*)"\]/gm;
+  let match = re.exec(pgn);
+  while (match !== null) {
+    result[match[1]] = match[2];
+    match = re.exec(pgn);
+  }
+  return result;
+}
+
+/**
  * Extract a game result string from PGN headers or game data.
  */
 export function getGameResult(pgn: string): string | null {
-  const match = /\[Result\s+"([^"]+)"\]/.exec(pgn);
-  return match ? match[1] : null;
+  return pgnHeaders(pgn).Result ?? null;
 }

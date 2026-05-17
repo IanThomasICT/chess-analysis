@@ -5,7 +5,7 @@ import {
   analyzeGame,
   acquireAnalysisSlot,
   releaseAnalysisSlot,
-} from "../lib/stockfish";
+} from "../lib/engine";
 
 /** Game IDs: alphanumeric, underscores, hyphens, up to 50 chars */
 const GAME_ID_PATTERN = /^[a-zA-Z0-9_-]{1,50}$/;

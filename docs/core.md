@@ -133,6 +133,11 @@ Game metadata from Chess.com. `id` is the numeric ID from the game URL.
 | `time_class` | TEXT | `"bullet"`, `"blitz"`, `"rapid"`, `"daily"` |
 | `end_time` | INTEGER | Unix timestamp |
 | `created_at` | INTEGER | Auto-set via `unixepoch()` |
+| `white_elo` | INTEGER | White's rating at game end (parsed from PGN `[WhiteElo]`) |
+| `black_elo` | INTEGER | Black's rating at game end (parsed from PGN `[BlackElo]`) |
+| `user_elo` | INTEGER | Queried user's rating at game end (denormalized for filtering) |
+| `eco` | TEXT | ECO code parsed from PGN `[ECO]` header |
+| `opening` | TEXT | Opening name parsed from PGN `[Opening]` header |
 
 Index: `idx_games_username` on `username`.
 
@@ -151,9 +156,37 @@ Per-position Stockfish evaluations. Composite PK `(game_id, move_index)`. This t
 | `best_move` | TEXT | Stockfish's recommended move (UCI) |
 | `depth` | INTEGER | Search depth used |
 
-Index: `idx_analysis_game_id` on `game_id`.
+Indexes: `idx_analysis_game_id` on `game_id`, `idx_analysis_fen` on `fen` (for position-recurrence lookups).
 
 All scores normalized to **White's perspective** (positive = White advantage).
+
+### `meta`
+
+Migration bookkeeping. Single key `schema_version` tracks the highest applied migration id.
+
+| Column | Type | Description |
+|---|---|---|
+| `key` | TEXT PK | e.g. `"schema_version"` |
+| `value` | TEXT | Stringified value (SQLite stores all as TEXT here) |
+
+Migrations are defined inline in `server/lib/db.ts` as an append-only `migrations: Migration[]` array. `runMigrations(db)` runs every migration with `id > current` inside a single transaction at server startup.
+
+### Engine abstraction
+
+`server/lib/engine.ts` (renamed from `stockfish.ts`) is engine-agnostic — UCI protocol is identical for Stockfish and Lc0. Env-driven config:
+
+| Env var | Default | Notes |
+|---|---|---|
+| `ENGINE_TYPE` | `stockfish` | `stockfish` or `lc0` |
+| `ENGINE_PATH` | (auto) | Binary path; falls back to PATH lookup |
+| `WEIGHTS_PATH` | (none) | Required when `ENGINE_TYPE=lc0` |
+| `ENGINE_BACKEND` | `cudnn-fp16` | Lc0 only |
+
+`MAX_CONCURRENT_ANALYSES` is 1 for Lc0 (single-GPU contention), 2 for Stockfish.
+
+### Shared classification
+
+`shared/classify.ts` — `MoveClass` enum (`"best" | "good" | "inaccuracy" | "mistake" | "blunder"`) and `classifySwing(wpDelta)` using Lichess thresholds (DESIGN D1). Imported by both client (`client/src/lib/classify.ts` re-export) and server (`server/lib/metrics.ts` once Phase 1 lands).
 
 ## File Structure
 
@@ -180,9 +213,13 @@ server/
     games.ts               # GET /api/games, GET /api/games/:gameId
     analyze.ts             # GET /api/analyze/:gameId (SSE stream)
   lib/
-    db.ts                  # SQLite singleton + schema creation
+    db.ts                  # SQLite singleton + schema + migration runner
     chesscom.ts            # Chess.com PubAPI client
-    stockfish.ts           # UCI subprocess + analysis generator
-    pgn.ts                 # PGN -> FEN/move parsing (chess.js)
+    engine.ts              # UCI subprocess (Stockfish/Lc0) + analysis generator
+    pgn.ts                 # PGN -> FEN/move parsing + pgnHeaders (chess.js)
+    backfill.ts            # Idempotent header backfill on startup
     rate-limit.ts          # Per-IP in-memory rate limiter
+
+shared/
+  classify.ts              # MoveClass enum + classifySwing (Lichess thresholds)
 ```

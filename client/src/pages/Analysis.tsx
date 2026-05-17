@@ -8,6 +8,7 @@ import { ChessBoard } from "../components/ChessBoard";
 import { EvalBar } from "../components/EvalBar";
 import { EvalGraph } from "../components/EvalGraph";
 import { MoveList } from "../components/MoveList";
+import { classifySwing, type MoveClass } from "../lib/classify";
 
 // Stable empty arrays — avoids new references on every render when data is undefined.
 const EMPTY_FENS: string[] = [];
@@ -31,18 +32,11 @@ function evalCp(row: AnalysisRow): number {
   return row.score_cp ?? 0;
 }
 
-// CSS class for a move based on how much the eval swung against the mover.
-function classifySwing(swing: number): string {
-  if (swing < -300) {
-    return "text-red-500 font-bold";
-  }
-  if (swing < -100) {
-    return "text-orange-500 font-semibold";
-  }
-  if (swing < -50) {
-    return "text-yellow-500";
-  }
-  return "";
+// Temporary Win% approximation from centipawns (will be replaced by server metrics in Phase 1).
+// Returns a value in [0, 100] representing Win% for the side with positive eval.
+function cpToWp(cp: number): number {
+  const clamped = Math.max(-1000, Math.min(1000, cp));
+  return 50 + 50 * (2 / (1 + Math.exp(-0.00368208 * clamped)) - 1);
 }
 
 /** Shape of SSE event data from the analysis endpoint */
@@ -232,24 +226,27 @@ export function Analysis() {
   );
 
   // Precompute move classifications once — O(n) with a Map, not O(n²) per render.
-  // moveClasses[i] is the CSS class for the move from position i to position i+1.
-  const moveClasses = useMemo(() => {
+  // moveClassifications[i] is the MoveClass for the move from position i to position i+1.
+  const moveClassifications = useMemo(() => {
     if (analysis.length === 0) {
-      return [];
+      return [] as MoveClass[];
     }
     const byIndex = new Map(analysis.map((a) => [a.move_index, a]));
-    const classes: string[] = [];
+    const classes: MoveClass[] = [];
     for (let i = 0; i < fens.length - 1; i++) {
       const before = byIndex.get(i);
       const after = byIndex.get(i + 1);
       if (before === undefined || after === undefined) {
-        classes.push("");
+        classes.push("good");
         continue;
       }
       const isWhiteMove = i % 2 === 0;
-      const diff = evalCp(after) - evalCp(before);
-      const swing = isWhiteMove ? diff : -diff;
-      classes.push(classifySwing(swing));
+      // Convert cp to Win% from White's perspective, then adjust for mover.
+      const wpBefore = cpToWp(isWhiteMove ? evalCp(before) : -evalCp(before));
+      const wpAfter = cpToWp(isWhiteMove ? evalCp(after) : -evalCp(after));
+      // wpDelta: how much the mover's Win% dropped (0 = no loss, 1 = total loss).
+      const wpDelta = Math.max(0, wpBefore - wpAfter) / 100;
+      classes.push(classifySwing(wpDelta));
     }
     return classes;
   }, [analysis, fens.length]);
@@ -371,7 +368,7 @@ export function Analysis() {
               moves={moveSans}
               currentMove={currentMove}
               onSelectMove={setCurrentMove}
-              moveClasses={moveClasses}
+              classifications={moveClassifications}
             />
           </div>
         </div>

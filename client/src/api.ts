@@ -7,6 +7,11 @@ export interface GameRow {
   result: string;
   time_class: string;
   end_time: number;
+  white_elo: number | null;
+  black_elo: number | null;
+  user_elo: number | null;
+  eco: string | null;
+  opening: string | null;
 }
 
 export interface GamesResponse {
@@ -39,6 +44,11 @@ export interface GameDetailResponse {
     timeClass: string;
     endTime: number;
     username: string;
+    whiteElo: number | null;
+    blackElo: number | null;
+    userElo: number | null;
+    eco: string | null;
+    opening: string | null;
   };
   fens: string[];
   moves: GameMove[];

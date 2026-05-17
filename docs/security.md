@@ -41,7 +41,7 @@ File: `server/lib/chesscom.ts`
 
 ## Stockfish Security
 
-File: `server/lib/stockfish.ts`
+File: `server/lib/engine.ts`
 
 ### Concurrency Limiting
 

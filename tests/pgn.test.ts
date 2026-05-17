@@ -1,5 +1,5 @@
 import { describe, it, expect } from "bun:test";
-import { pgnToFens, pgnToMoves, getGameResult } from "../server/lib/pgn";
+import { pgnToFens, pgnToMoves, getGameResult, pgnHeaders } from "../server/lib/pgn";
 
 // ---------- sample PGNs ----------
 
@@ -189,6 +189,59 @@ describe("getGameResult", () => {
     const result = getGameResult(pgn);
     // The regex uses \s+ so multiple spaces should still match
     expect(result).toBe("1-0");
+  });
+});
+
+// =====================================================================
+// pgnHeaders
+// =====================================================================
+
+const CHESSCOM_HEADERS_PGN = `[Event "Live Chess"]
+[Site "Chess.com"]
+[White "alice"]
+[Black "bob"]
+[Result "1-0"]
+[WhiteElo "1500"]
+[BlackElo "1450"]
+[ECO "C50"]
+[TimeControl "600"]
+
+1. e4 e5 1-0`;
+
+describe("pgnHeaders", () => {
+  it("parses standard Chess.com headers correctly", () => {
+    const headers = pgnHeaders(CHESSCOM_HEADERS_PGN);
+    expect(headers.White).toBe("alice");
+    expect(headers.Black).toBe("bob");
+    expect(headers.Result).toBe("1-0");
+    expect(headers.ECO).toBe("C50");
+    expect(headers.WhiteElo).toBe("1500");
+    expect(headers.BlackElo).toBe("1450");
+    expect(headers.Event).toBe("Live Chess");
+    expect(headers.Site).toBe("Chess.com");
+    expect(headers.TimeControl).toBe("600");
+  });
+
+  it("returns empty object for PGN with no headers", () => {
+    const headers = pgnHeaders("1. e4 e5 2. Nf3");
+    expect(headers).toEqual({});
+  });
+
+  it("returns undefined for missing keys (no throw)", () => {
+    const headers = pgnHeaders(CHESSCOM_HEADERS_PGN);
+    expect(headers.Nonexistent).toBeUndefined();
+  });
+
+  it("handles extra whitespace between key and value", () => {
+    const pgn = '[Key   "Value"]\n\n1. e4 *';
+    const headers = pgnHeaders(pgn);
+    expect(headers.Key).toBe("Value");
+  });
+
+  it("empty value produces empty string entry", () => {
+    const pgn = '[Key ""]\n\n1. e4 *';
+    const headers = pgnHeaders(pgn);
+    expect(headers.Key).toBe("");
   });
 });
 

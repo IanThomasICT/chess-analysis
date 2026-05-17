@@ -5,6 +5,12 @@ import { serveStatic } from "hono/bun";
 import games from "./routes/games";
 import analyze from "./routes/analyze";
 import { rateLimit } from "./lib/rate-limit";
+import { backfillGameHeaders } from "./lib/backfill";
+
+const backfillCount = backfillGameHeaders();
+if (backfillCount > 0) {
+  console.log(`Backfilled headers for ${String(backfillCount)} games`);
+}
 
 const app = new Hono();
 

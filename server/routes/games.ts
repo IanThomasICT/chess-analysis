@@ -1,8 +1,16 @@
 import { Hono } from "hono";
 import { db } from "../lib/db";
 import { fetchRecentGames, type ChessComGame } from "../lib/chesscom";
-import { pgnToFens, pgnToMoves } from "../lib/pgn";
-import { isGameAnalyzed, getGameAnalysis, type AnalysisRow } from "../lib/stockfish";
+import { pgnToFens, pgnToMoves, pgnHeaders } from "../lib/pgn";
+import { isGameAnalyzed, getGameAnalysis, type AnalysisRow } from "../lib/engine";
+import { parseEloHeader } from "../lib/backfill";
+
+function normalizeHeader(raw: string | undefined): string | null {
+  if (raw === undefined || raw.trim() === "") {
+    return null;
+  }
+  return raw;
+}
 
 /** Chess.com usernames: alphanumeric, underscores, hyphens, up to 50 chars */
 const USERNAME_PATTERN = /^[a-zA-Z0-9_-]{1,50}$/;
@@ -19,6 +27,69 @@ interface GameRow {
   result: string;
   time_class: string;
   end_time: number;
+  white_elo: number | null;
+  black_elo: number | null;
+  user_elo: number | null;
+  eco: string | null;
+  opening: string | null;
+}
+
+export interface GameRowData {
+  id: string;
+  username: string;
+  pgn: string;
+  white: string;
+  black: string;
+  result: string;
+  time_class: string;
+  end_time: number;
+  white_elo: number | null;
+  black_elo: number | null;
+  user_elo: number | null;
+  eco: string | null;
+  opening: string | null;
+}
+
+/** Build a fully-populated game row from a ChessComGame and the requesting username. */
+export function buildGameRow(
+  username: string,
+  g: ChessComGame,
+): GameRowData {
+  const gameId = g.url.split("/").pop() ?? g.url;
+
+  let result: "1-0" | "0-1" | "1/2-1/2";
+  if (g.white.result === "win") {
+    result = "1-0";
+  } else if (g.black.result === "win") {
+    result = "0-1";
+  } else {
+    result = "1/2-1/2";
+  }
+
+  const h = pgnHeaders(g.pgn);
+  const white_elo = parseEloHeader(h.WhiteElo);
+  const black_elo = parseEloHeader(h.BlackElo);
+  const userColor =
+    username.toLowerCase() === g.white.username.toLowerCase() ? "w" : "b";
+  const user_elo = userColor === "w" ? white_elo : black_elo;
+  const eco = normalizeHeader(h.ECO);
+  const opening = normalizeHeader(h.Opening);
+
+  return {
+    id: gameId,
+    username: username.toLowerCase(),
+    pgn: g.pgn,
+    white: g.white.username,
+    black: g.black.username,
+    result,
+    time_class: g.time_class,
+    end_time: g.end_time,
+    white_elo,
+    black_elo,
+    user_elo,
+    eco,
+    opening,
+  };
 }
 
 const games = new Hono();
@@ -38,31 +109,29 @@ games.get("/games", async (c) => {
     const chessComGames = await fetchRecentGames(username, 3);
 
     const upsert = db.prepare(`
-      INSERT OR REPLACE INTO games (id, username, pgn, white, black, result, time_class, end_time)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT OR REPLACE INTO games
+        (id, username, pgn, white, black, result, time_class, end_time,
+         white_elo, black_elo, user_elo, eco, opening)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const upsertMany = db.transaction((gamesToUpsert: ChessComGame[]) => {
       for (const g of gamesToUpsert) {
-        const gameId = g.url.split("/").pop() ?? g.url;
-        let result: "1-0" | "0-1" | "1/2-1/2";
-        if (g.white.result === "win") {
-          result = "1-0";
-        } else if (g.black.result === "win") {
-          result = "0-1";
-        } else {
-          result = "1/2-1/2";
-        }
-
+        const row = buildGameRow(username, g);
         upsert.run(
-          gameId,
-          username.toLowerCase(),
-          g.pgn,
-          g.white.username,
-          g.black.username,
-          result,
-          g.time_class,
-          g.end_time,
+          row.id,
+          row.username,
+          row.pgn,
+          row.white,
+          row.black,
+          row.result,
+          row.time_class,
+          row.end_time,
+          row.white_elo,
+          row.black_elo,
+          row.user_elo,
+          row.eco,
+          row.opening,
         );
       }
     });
@@ -77,7 +146,8 @@ games.get("/games", async (c) => {
   // Load from DB
   const rows = db
     .prepare(
-      `SELECT id, username, pgn, white, black, result, time_class, end_time
+      `SELECT id, username, pgn, white, black, result, time_class, end_time,
+              white_elo, black_elo, user_elo, eco, opening
        FROM games
        WHERE username = ?
        ORDER BY end_time DESC`,
@@ -127,6 +197,11 @@ games.get("/games/:gameId", (c) => {
       timeClass: game.time_class,
       endTime: game.end_time,
       username: game.username,
+      whiteElo: game.white_elo,
+      blackElo: game.black_elo,
+      userElo: game.user_elo,
+      eco: game.eco,
+      opening: game.opening,
     },
     fens,
     moves,

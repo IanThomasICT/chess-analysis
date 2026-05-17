@@ -2,14 +2,29 @@ import { db } from "./db";
 
 import { existsSync } from "node:fs";
 
-function resolveStockfishPath(): string {
+// ── Engine configuration (env-driven) ────────────────────────────────────────
+const ENGINE_TYPE = (process.env.ENGINE_TYPE ?? "stockfish") as "stockfish" | "lc0";
+const ENGINE_PATH_OVERRIDE = process.env.ENGINE_PATH;
+const WEIGHTS_PATH = process.env.WEIGHTS_PATH;
+const ENGINE_BACKEND = process.env.ENGINE_BACKEND ?? "cudnn-fp16";
+
+function resolveEnginePath(): string {
+  // Explicit override always wins
+  if (ENGINE_PATH_OVERRIDE !== undefined && ENGINE_PATH_OVERRIDE !== "") {
+    return ENGINE_PATH_OVERRIDE;
+  }
+  if (ENGINE_TYPE === "lc0") {
+    // Default to bare "lc0" — relies on $PATH
+    return "lc0";
+  }
+  // Stockfish: legacy STOCKFISH_PATH env var, then well-known locations, then bare name
   if (process.env.STOCKFISH_PATH !== undefined) {
     return process.env.STOCKFISH_PATH;
   }
   if (process.env.HOME !== undefined) {
     const candidates = [
-      `${process.env.HOME  }/bin/stockfish-bin`,
-      `${process.env.HOME  }/.local/bin/stockfish`,
+      `${process.env.HOME}/bin/stockfish-bin`,
+      `${process.env.HOME}/.local/bin/stockfish`,
     ];
     for (const p of candidates) {
       if (existsSync(p)) {return p;}
@@ -19,7 +34,7 @@ function resolveStockfishPath(): string {
   return "stockfish";
 }
 
-const STOCKFISH_PATH: string = resolveStockfishPath();
+const ENGINE_PATH: string = resolveEnginePath();
 
 /** Max time per position in ms. Higher values find shorter/more accurate mating lines. */
 const SEARCH_MOVETIME = 1500;
@@ -27,11 +42,11 @@ const SEARCH_MOVETIME = 1500;
 /** Minimum depth to accept from cache. Movetime search at 1500ms typically reaches 20-30+. */
 const MIN_CACHE_DEPTH = 16;
 
-/** Timeout per position — abort if Stockfish doesn't respond within this time. */
+/** Timeout per position — abort if engine doesn't respond within this time. */
 const POSITION_TIMEOUT_MS = 10_000;
 
-/** Maximum concurrent Stockfish analysis processes. */
-const MAX_CONCURRENT_ANALYSES = 2;
+/** Maximum concurrent analysis processes. Lc0 GPU contention limits this to 1. */
+const MAX_CONCURRENT_ANALYSES = ENGINE_TYPE === "lc0" ? 1 : 2;
 
 let activeAnalyses = 0;
 
@@ -161,7 +176,7 @@ async function withTimeout<T>(
   }
 }
 
-interface StockfishHandle {
+interface EngineHandle {
   sendCmd: (cmd: string) => void;
   reader: ReadableStreamDefaultReader<Uint8Array>;
   init: () => Promise<void>;
@@ -169,11 +184,11 @@ interface StockfishHandle {
 }
 
 /**
- * Spawn a Stockfish process and return control handles.
+ * Spawn the configured engine process (Stockfish or Lc0) and return control handles.
  * Uses Bun.spawn with FileSink for stdin.
  */
-export function spawnStockfish(): StockfishHandle {
-  const proc = Bun.spawn([STOCKFISH_PATH], {
+export function spawnEngine(): EngineHandle {
+  const proc = Bun.spawn([ENGINE_PATH], {
     stdin: "pipe",
     stdout: "pipe",
     stderr: "ignore",
@@ -186,15 +201,25 @@ export function spawnStockfish(): StockfishHandle {
   const sendCmd = (cmd: string): void => {
     // Strip newlines to prevent UCI command injection
     const sanitized = cmd.replace(/[\r\n]/g, "");
-    void stdin.write(`${sanitized  }\n`);
+    void stdin.write(`${sanitized}\n`);
     void stdin.flush();
   };
 
   const init = async (): Promise<void> => {
     sendCmd("uci");
     await readUntil(reader, "uciok");
-    sendCmd("setoption name Threads value 4");
-    sendCmd("setoption name Hash value 128");
+
+    if (ENGINE_TYPE === "lc0") {
+      if (WEIGHTS_PATH === undefined || WEIGHTS_PATH === "") {
+        throw new Error("WEIGHTS_PATH env var required when ENGINE_TYPE=lc0");
+      }
+      sendCmd(`setoption name WeightsFile value ${WEIGHTS_PATH}`);
+      sendCmd(`setoption name Backend value ${ENGINE_BACKEND}`);
+    } else {
+      sendCmd("setoption name Threads value 4");
+      sendCmd("setoption name Hash value 128");
+    }
+
     sendCmd("ucinewgame");
     sendCmd("isready");
     await readUntil(reader, "readyok");
@@ -218,14 +243,14 @@ export function spawnStockfish(): StockfishHandle {
  */
 async function analyzeSinglePosition(
   fen: string,
-  sf: StockfishHandle,
+  sf: EngineHandle,
 ): Promise<AnalysisResult> {
-  sf.sendCmd(`position fen ${  fen}`);
-  sf.sendCmd(`go movetime ${  String(SEARCH_MOVETIME)}`);
+  sf.sendCmd(`position fen ${fen}`);
+  sf.sendCmd(`go movetime ${String(SEARCH_MOVETIME)}`);
   const result = await withTimeout(
     readUntilBestMove(sf.reader),
     POSITION_TIMEOUT_MS,
-    "Stockfish timed out analyzing position",
+    "Engine timed out analyzing position",
   );
 
   // UCI scores are from the side-to-move's perspective.
@@ -293,7 +318,7 @@ export async function* analyzeGame(
     return;
   }
 
-  const sf = spawnStockfish();
+  const sf = spawnEngine();
   try {
     await sf.init();
 

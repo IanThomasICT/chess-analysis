@@ -3,7 +3,7 @@ import { describe, it, expect } from "bun:test";
 // =====================================================================
 // UCI output parsing logic
 // These tests validate the parsing rules used in readUntilBestMove()
-// from stockfish.server.ts without spawning a real Stockfish process.
+// from engine.ts without spawning a real engine process.
 // =====================================================================
 
 interface Score {
@@ -19,7 +19,7 @@ interface ParsedResult {
 
 /**
  * Replicates the line-by-line parsing logic from readUntilBestMove().
- * Given an array of Stockfish stdout lines, returns the final evaluation.
+ * Given an array of engine stdout lines, returns the final evaluation.
  */
 function parseUciOutput(lines: string[]): ParsedResult {
   let lastScore: Score = { cp: null, mate: null };
@@ -215,33 +215,33 @@ describe("score convention (White's perspective)", () => {
 });
 
 // =====================================================================
-// Stockfish path resolution logic
+// Engine path resolution logic
 // =====================================================================
 
-function resolveStockfishPath(
+function resolveEnginePath(
   envPath: string | undefined,
   homeDir: string | undefined
 ): string {
   if (envPath !== undefined) {return envPath;}
-  if (homeDir !== undefined) {return `${homeDir  }/.local/bin/stockfish`;}
+  if (homeDir !== undefined) {return `${homeDir}/.local/bin/stockfish`;}
   return "/usr/local/bin/stockfish";
 }
 
-describe("Stockfish path resolution", () => {
+describe("Engine path resolution", () => {
   it("uses STOCKFISH_PATH env var when set", () => {
-    expect(resolveStockfishPath("/custom/stockfish", "/home/user")).toBe(
+    expect(resolveEnginePath("/custom/stockfish", "/home/user")).toBe(
       "/custom/stockfish"
     );
   });
 
   it("falls back to $HOME/.local/bin/stockfish", () => {
-    expect(resolveStockfishPath(undefined, "/home/user")).toBe(
+    expect(resolveEnginePath(undefined, "/home/user")).toBe(
       "/home/user/.local/bin/stockfish"
     );
   });
 
   it("falls back to /usr/local/bin/stockfish when no HOME", () => {
-    expect(resolveStockfishPath(undefined, undefined)).toBe(
+    expect(resolveEnginePath(undefined, undefined)).toBe(
       "/usr/local/bin/stockfish"
     );
   });

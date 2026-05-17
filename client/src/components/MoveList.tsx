@@ -1,17 +1,18 @@
 import { memo, useEffect, useMemo, useRef } from "react";
+import { classToColor, type MoveClass } from "../lib/classify";
 
 interface MoveListProps {
   moves: string[];
   currentMove: number;
   onSelectMove: (moveIndex: number) => void;
-  moveClasses: string[];
+  classifications: MoveClass[];
 }
 
 export const MoveList = memo(function MoveList({
   moves,
   currentMove,
   onSelectMove,
-  moveClasses,
+  classifications,
 }: MoveListProps) {
   const activeRef = useRef<HTMLButtonElement>(null);
 
@@ -56,7 +57,7 @@ export const MoveList = memo(function MoveList({
                   currentMove === pair.white.index
                     ? "bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200"
                     : "text-gray-900 dark:text-gray-100"
-                } ${moveClasses[pair.white.index - 1] ?? ""}`}
+                } ${classToColor(classifications[pair.white.index - 1] ?? "good")}`}
               >
                 {pair.white.san}
               </button>
@@ -69,7 +70,7 @@ export const MoveList = memo(function MoveList({
                     currentMove === blackPly.index
                       ? "bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200"
                       : "text-gray-900 dark:text-gray-100"
-                  } ${moveClasses[blackPly.index - 1] ?? ""}`}
+                  } ${classToColor(classifications[blackPly.index - 1] ?? "good")}`}
                 >
                   {blackPly.san}
                 </button>
