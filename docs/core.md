@@ -155,8 +155,9 @@ Per-position Stockfish evaluations. Composite PK `(game_id, move_index)`. This t
 | `score_mate` | INTEGER | Mate-in-N (null if centipawn) |
 | `best_move` | TEXT | Stockfish's recommended move (UCI) |
 | `depth` | INTEGER | Search depth used |
+| `fen_key` | TEXT | First 4 FEN fields (board/side/castling/ep) for transposition match |
 
-Indexes: `idx_analysis_game_id` on `game_id`, `idx_analysis_fen` on `fen` (for position-recurrence lookups).
+Indexes: `idx_analysis_game_id` on `game_id`, `idx_analysis_fen` on `fen`, `idx_analysis_fen_key` on `fen_key` (used by `/api/positions/history`).
 
 All scores normalized to **White's perspective** (positive = White advantage).
 
@@ -237,6 +238,7 @@ client/
       GameCard.tsx         # Gallery card; accuracy/blunder chips when metrics present
       StatsPanel.tsx       # Home page by-side breakdown panel
       EloTrendChart.tsx    # uPlot line chart for /stats Elo trend tab
+      RecurrencePanel.tsx  # Position-recurrence list on Analysis page
       GameCard.tsx         # Gallery card for a single game
 
 server/
@@ -245,6 +247,7 @@ server/
     games.ts               # GET /api/games, GET /api/games/:gameId, /:id/metrics, /metrics?username=
     analyze.ts             # GET /api/analyze/:gameId (SSE stream; invalidates game_metrics)
     stats.ts               # /api/stats/:user/{by-side,win-rate,elo-trend,by-time-of-day}
+    positions.ts           # GET /api/positions/history?fen=&username= (recurrence)
   data/
     openings/{a..e}.tsv    # lichess-org/chess-openings (CC0)
   lib/

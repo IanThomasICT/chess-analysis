@@ -2,6 +2,7 @@ import type { Database } from "bun:sqlite";
 import { db } from "./db";
 import { pgnHeaders, pgnToMoves } from "./pgn";
 import { classifyOpening, loadOpenings } from "./openings";
+import { fenKey } from "./engine";
 
 interface GameToBackfill {
   id: string;
@@ -63,6 +64,37 @@ export function backfillGameHeaders(database: Database = db): number {
       update.run(whiteElo, blackElo, userElo, eco, opening, g.id);
     }
   });
+
+  tx(rows);
+  return rows.length;
+}
+
+/**
+ * Idempotent backfill: for every analysis row where fen_key IS NULL, compute and
+ * populate fen_key (first 4 FEN fields). Safe to run on every server start.
+ */
+export function backfillAnalysisFenKeys(database: Database = db): number {
+  const rows = database
+    .prepare(
+      `SELECT game_id, move_index, fen FROM analysis WHERE fen_key IS NULL`,
+    )
+    .all() as Array<{ game_id: string; move_index: number; fen: string }>;
+
+  if (rows.length === 0) {
+    return 0;
+  }
+
+  const update = database.prepare(
+    `UPDATE analysis SET fen_key = ? WHERE game_id = ? AND move_index = ?`,
+  );
+
+  const tx = database.transaction(
+    (items: Array<{ game_id: string; move_index: number; fen: string }>) => {
+      for (const r of items) {
+        update.run(fenKey(r.fen), r.game_id, r.move_index);
+      }
+    },
+  );
 
   tx(rows);
   return rows.length;

@@ -5,14 +5,19 @@ import { serveStatic } from "hono/bun";
 import games from "./routes/games";
 import analyze from "./routes/analyze";
 import stats from "./routes/stats";
+import positions from "./routes/positions";
 import { rateLimit } from "./lib/rate-limit";
-import { backfillGameHeaders } from "./lib/backfill";
+import { backfillGameHeaders, backfillAnalysisFenKeys } from "./lib/backfill";
 import { loadOpenings } from "./lib/openings";
 
 loadOpenings();
 const backfillCount = backfillGameHeaders();
 if (backfillCount > 0) {
   console.log(`Backfilled headers for ${String(backfillCount)} games`);
+}
+const fenKeyCount = backfillAnalysisFenKeys();
+if (fenKeyCount > 0) {
+  console.log(`Backfilled fen_key for ${String(fenKeyCount)} analysis rows`);
 }
 
 const app = new Hono();
@@ -33,6 +38,7 @@ app.use("/api/analyze/*", rateLimit({ windowMs: 60_000, max: 5 }));
 app.route("/api", games);
 app.route("/api", analyze);
 app.route("/api", stats);
+app.route("/api", positions);
 
 // Global error handler — never leak internal details to clients
 app.onError((err, c) => {

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo, startTransition } from "react";
-import { useParams, Link } from "react-router";
+import { useParams, useSearchParams, Link } from "react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { DrawShape } from "@lichess-org/chessground/draw";
 import type { Key } from "@lichess-org/chessground/types";
@@ -8,6 +8,7 @@ import { ChessBoard } from "../components/ChessBoard";
 import { EvalBar } from "../components/EvalBar";
 import { EvalGraph } from "../components/EvalGraph";
 import { MoveList } from "../components/MoveList";
+import { RecurrencePanel } from "../components/RecurrencePanel";
 import { classifySwing, type MoveClass } from "../lib/classify";
 
 function accuracyChipClass(acc: number): string {
@@ -77,6 +78,7 @@ export function Analysis() {
     enabled: gameId !== undefined && gameId !== "" && (data?.analyzed ?? false),
   });
 
+  const [searchParams] = useSearchParams();
   const [currentMove, setCurrentMove] = useState(0);
   const [analysis, setAnalysis] = useState<AnalysisRow[]>([]);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -85,7 +87,7 @@ export function Analysis() {
 
   // Seed analysis state from query data when it loads. SSE results extend this
   // array in-place, so we need state — pure derivation is not enough.
-   
+
   useEffect(() => {
     if (data !== undefined) {
       setAnalysis(data.analysis);
@@ -97,6 +99,20 @@ export function Analysis() {
   const moves = data?.moves ?? EMPTY_MOVES;
   const analyzed = data?.analyzed ?? false;
   const maxMove = fens.length - 1;
+
+  // Deep-link support: honour ?move=N query param set by RecurrencePanel links.
+  // searchParamsRef captures the value at mount; we only want to apply the
+  // param once when fens first load (fens.length transitions 0 → N).
+  const searchParamsRef = useRef(searchParams);
+  useEffect(() => {
+    const moveParam = searchParamsRef.current.get("move");
+    if (moveParam !== null && fens.length > 0) {
+      const n = parseInt(moveParam, 10);
+      if (!Number.isNaN(n) && n >= 0 && n < fens.length) {
+        setCurrentMove(n);
+      }
+    }
+  }, [fens.length]);
 
   // Board orientation — default to the searched user's color, toggleable via flip button
   const defaultOrientation: "white" | "black" =
@@ -130,10 +146,56 @@ export function Analysis() {
       if (e.key === "End") {
         setCurrentMove(maxMove);
       }
+      if (e.key.toLowerCase() === "b") {
+        e.preventDefault();
+        const classes = classificationsRef.current;
+        const cur = currentMoveRef.current;
+        if (e.shiftKey) {
+          for (let i = cur - 2; i >= 0; i--) {
+            if (classes[i] === "blunder") {
+              setCurrentMove(i + 1);
+              return;
+            }
+          }
+        } else {
+          for (let i = cur; i < classes.length; i++) {
+            if (classes[i] === "blunder") {
+              setCurrentMove(Math.min(i + 1, maxMove));
+              return;
+            }
+          }
+        }
+      }
+      if (e.key.toLowerCase() === "m") {
+        e.preventDefault();
+        const classes = classificationsRef.current;
+        const cur = currentMoveRef.current;
+        if (e.shiftKey) {
+          for (let i = cur - 2; i >= 0; i--) {
+            if (classes[i] === "mistake") {
+              setCurrentMove(i + 1);
+              return;
+            }
+          }
+        } else {
+          for (let i = cur; i < classes.length; i++) {
+            if (classes[i] === "mistake") {
+              setCurrentMove(Math.min(i + 1, maxMove));
+              return;
+            }
+          }
+        }
+      }
     };
     window.addEventListener("keydown", handler);
     return () => { window.removeEventListener("keydown", handler); };
   }, [maxMove, fens.length]);
+
+  // Refs so keyboard handler always sees latest values without re-registering.
+  // Declared here (before the keyboard useEffect) to satisfy rules-of-hooks order.
+  // The .current assignments happen after moveClassifications is computed below.
+  const currentMoveRef = useRef(currentMove);
+  const classificationsRef = useRef<MoveClass[]>([]);
 
   // Auto-start analysis via SSE when game loads (if not already analyzed).
   // The setIsAnalyzing/setProgress calls below are part of the init sequence,
@@ -171,6 +233,7 @@ export function Analysis() {
       results.push({
         move_index: eventData.moveIndex,
         fen: eventData.fen,
+        fen_key: null,
         move_san: eventData.moveSan ?? null,
         score_cp: eventData.scoreCp,
         score_mate: eventData.scoreMate,
@@ -267,6 +330,10 @@ export function Analysis() {
     return classes;
   }, [analysis, fens.length]);
 
+  // Keep refs in sync so the keyboard handler sees the latest values each event.
+  currentMoveRef.current = currentMove;
+  classificationsRef.current = moveClassifications;
+
   // Stable SAN array so MoveList gets a consistent reference.
   const moveSans = useMemo(() => moves.map((m) => m.san), [moves]);
 
@@ -277,6 +344,24 @@ export function Analysis() {
       ? [prevMove.from, prevMove.to] as [Key, Key]
       : undefined;
   }, [currentMove, moves]);
+
+  function goToNext(klass: MoveClass) {
+    for (let i = currentMove; i < moveClassifications.length; i++) {
+      if (moveClassifications[i] === klass) {
+        setCurrentMove(Math.min(i + 1, maxMove));
+        return;
+      }
+    }
+  }
+
+  function goToPrev(klass: MoveClass) {
+    for (let i = currentMove - 2; i >= 0; i--) {
+      if (moveClassifications[i] === klass) {
+        setCurrentMove(i + 1);
+        return;
+      }
+    }
+  }
 
   if (isPending) {
     return (
@@ -471,6 +556,53 @@ export function Analysis() {
             &#x21C5;
           </button>
         </div>
+
+        {/* Blunder / Mistake navigation — only when analysis is available */}
+        {moveClassifications.length > 0 && (
+          <div className="mt-2 flex items-center justify-center gap-2">
+            <button
+              type="button"
+              onClick={() => { goToPrev("blunder"); }}
+              className="px-2 py-1 text-xs rounded bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200"
+              title="Previous blunder (Shift+B)"
+            >
+              &larr; Blunder
+            </button>
+            <button
+              type="button"
+              onClick={() => { goToNext("blunder"); }}
+              className="px-2 py-1 text-xs rounded bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200"
+              title="Next blunder (B)"
+            >
+              Blunder &rarr;
+            </button>
+            <button
+              type="button"
+              onClick={() => { goToPrev("mistake"); }}
+              className="px-2 py-1 text-xs rounded bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200"
+              title="Previous mistake (Shift+M)"
+            >
+              &larr; Mistake
+            </button>
+            <button
+              type="button"
+              onClick={() => { goToNext("mistake"); }}
+              className="px-2 py-1 text-xs rounded bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200"
+              title="Next mistake (M)"
+            >
+              Mistake &rarr;
+            </button>
+          </div>
+        )}
+
+        {/* Recurrence Panel — shows prior games where this position was reached */}
+        {analyzed && currentMove < fens.length && (
+          <RecurrencePanel
+            fen={fens[currentMove]}
+            username={game.username}
+            currentGameId={game.id}
+          />
+        )}
       </main>
     </div>
   );

@@ -265,6 +265,15 @@ async function analyzeSinglePosition(
 }
 
 /**
+ * Compute the transposition key for a FEN string.
+ * Returns the first 4 space-separated fields (board, side-to-move, castling rights,
+ * en-passant square), stripping the halfmove clock and fullmove counter.
+ */
+export function fenKey(fen: string): string {
+  return fen.split(" ").slice(0, 4).join(" ");
+}
+
+/**
  * Analyze all positions in a game and store results in the DB.
  * Yields progress events for each completed position.
  */
@@ -324,8 +333,8 @@ export async function* analyzeGame(
 
     const upsert = db.prepare(`
       INSERT OR REPLACE INTO analysis
-        (game_id, move_index, fen, move_san, score_cp, score_mate, best_move, depth)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        (game_id, move_index, fen, fen_key, move_san, score_cp, score_mate, best_move, depth)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     for (let i = 0; i < fens.length; i++) {
@@ -363,6 +372,7 @@ export async function* analyzeGame(
         gameId,
         i,
         fens[i],
+        fenKey(fens[i]),
         moveSan,
         result.score.cp,
         result.score.mate,
@@ -406,7 +416,7 @@ export function isGameAnalyzed(
 export function getGameAnalysis(gameId: string): AnalysisRow[] {
   return db
     .prepare(
-      `SELECT move_index, fen, move_san, score_cp, score_mate, best_move, depth
+      `SELECT move_index, fen, fen_key, move_san, score_cp, score_mate, best_move, depth
        FROM analysis WHERE game_id = ? ORDER BY move_index`,
     )
     .all(gameId) as AnalysisRow[];
@@ -415,6 +425,7 @@ export function getGameAnalysis(gameId: string): AnalysisRow[] {
 export interface AnalysisRow {
   move_index: number;
   fen: string;
+  fen_key: string | null;
   move_san: string | null;
   score_cp: number | null;
   score_mate: number | null;

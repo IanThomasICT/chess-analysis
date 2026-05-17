@@ -22,6 +22,7 @@ export interface GamesResponse {
 export interface AnalysisRow {
   move_index: number;
   fen: string;
+  fen_key: string | null;
   move_san: string | null;
   score_cp: number | null;
   score_mate: number | null;
@@ -173,6 +174,30 @@ export interface WinRateSliceRow {
   win_rate: number;
   avg_accuracy: number | null;
   opening?: string;
+}
+
+export interface PositionHistoryEntry {
+  game_id: string;
+  move_index: number;
+  end_time: number;
+  white: string;
+  black: string;
+  result: string;
+  was_blunder: boolean;
+  played_move: string | null;
+  best_move: string | null;
+}
+
+export async function fetchPositionHistory(
+  fen: string,
+  username: string,
+): Promise<PositionHistoryEntry[]> {
+  const params = new URLSearchParams({ fen, username });
+  const r = await fetch(`/api/positions/history?${params.toString()}`);
+  if (!r.ok) {
+    throw new Error("Failed to fetch position history");
+  }
+  return r.json() as Promise<PositionHistoryEntry[]>;
 }
 
 export async function fetchWinRateSlice(

@@ -1,7 +1,8 @@
 import { describe, expect, test, beforeEach } from "bun:test";
 import { Database } from "bun:sqlite";
 import type { Migration } from "../server/lib/db";
-import { backfillGameHeaders } from "../server/lib/backfill";
+import { backfillGameHeaders, backfillAnalysisFenKeys } from "../server/lib/backfill";
+import { fenKey } from "../server/lib/engine";
 import { loadOpenings } from "../server/lib/openings";
 
 // ---------------------------------------------------------------------------
@@ -59,6 +60,12 @@ function makeDb(): Database {
   // Run migration #3 — index on analysis.fen
   db.run(
     "CREATE INDEX IF NOT EXISTS idx_analysis_fen ON analysis(fen)",
+  );
+
+  // Run migration #6 — fen_key column + index
+  db.run("ALTER TABLE analysis ADD COLUMN fen_key TEXT");
+  db.run(
+    "CREATE INDEX IF NOT EXISTS idx_analysis_fen_key ON analysis(fen_key)",
   );
 
   return db;
@@ -249,5 +256,114 @@ describe("backfillGameHeaders", () => {
     const row = getGame(db, "g1");
     expect(row?.eco).toBe("C50");
     expect(row?.opening).toBe("Italian Game");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// fenKey helper unit tests
+// ---------------------------------------------------------------------------
+
+describe("fenKey", () => {
+  test("strips halfmove and fullmove counters from starting FEN", () => {
+    const fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+    expect(fenKey(fen)).toBe("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -");
+  });
+
+  test("preserves board, side-to-move, castling, and en-passant fields exactly", () => {
+    const fen = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1";
+    expect(fenKey(fen)).toBe("rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3");
+  });
+
+  test("works for mid-game FEN with partial castling rights", () => {
+    const fen = "r1bqk2r/pppp1ppp/2n2n2/2b1p3/2B1P3/2N2N2/PPPP1PPP/R1BQK2R w KQkq - 4 5";
+    expect(fenKey(fen)).toBe("r1bqk2r/pppp1ppp/2n2n2/2b1p3/2B1P3/2N2N2/PPPP1PPP/R1BQK2R w KQkq -");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// backfillAnalysisFenKeys tests
+// ---------------------------------------------------------------------------
+
+interface AnalysisRowFenKey {
+  game_id: string;
+  move_index: number;
+  fen_key: string | null;
+}
+
+function insertAnalysisRow(
+  database: Database,
+  gameId: string,
+  moveIndex: number,
+  fen: string,
+): void {
+  database
+    .prepare(
+      `INSERT INTO analysis (game_id, move_index, fen, best_move, depth)
+       VALUES (?, ?, ?, '', 0)`,
+    )
+    .run(gameId, moveIndex, fen);
+}
+
+function getAnalysisFenKeys(database: Database): AnalysisRowFenKey[] {
+  return database
+    .prepare(
+      `SELECT game_id, move_index, fen_key FROM analysis ORDER BY game_id, move_index`,
+    )
+    .all() as AnalysisRowFenKey[];
+}
+
+describe("backfillAnalysisFenKeys", () => {
+  test("backfills 3 rows with fen_key IS NULL — returns 3, all rows populated", () => {
+    // Seed a game row first (FK constraint)
+    db.prepare(
+      `INSERT INTO games (id, username, pgn, white, black) VALUES (?, ?, ?, ?, ?)`,
+    ).run("g1", "alice", "", "Alice", "Bob");
+
+    insertAnalysisRow(db, "g1", 0, "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
+    insertAnalysisRow(db, "g1", 1, "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1");
+    insertAnalysisRow(db, "g1", 2, "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq e6 0 2");
+
+    const count = backfillAnalysisFenKeys(db);
+    expect(count).toBe(3);
+
+    const rows = getAnalysisFenKeys(db);
+    expect(rows).toHaveLength(3);
+    expect(rows[0]?.fen_key).toBe("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -");
+    expect(rows[1]?.fen_key).toBe("rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3");
+    expect(rows[2]?.fen_key).toBe("rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq e6");
+  });
+
+  test("re-running backfill is idempotent — returns 0 on second call", () => {
+    db.prepare(
+      `INSERT INTO games (id, username, pgn, white, black) VALUES (?, ?, ?, ?, ?)`,
+    ).run("g2", "alice", "", "Alice", "Bob");
+
+    insertAnalysisRow(db, "g2", 0, "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
+
+    const first = backfillAnalysisFenKeys(db);
+    expect(first).toBe(1);
+
+    const second = backfillAnalysisFenKeys(db);
+    expect(second).toBe(0);
+  });
+
+  test("starting position FEN produces correct fen_key", () => {
+    db.prepare(
+      `INSERT INTO games (id, username, pgn, white, black) VALUES (?, ?, ?, ?, ?)`,
+    ).run("g3", "alice", "", "Alice", "Bob");
+
+    const startFen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+    insertAnalysisRow(db, "g3", 0, startFen);
+
+    backfillAnalysisFenKeys(db);
+
+    const rows = getAnalysisFenKeys(db);
+    const row = rows.find((r) => r.game_id === "g3" && r.move_index === 0);
+    expect(row?.fen_key).toBe("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -");
+  });
+
+  test("returns 0 when no rows have fen_key IS NULL", () => {
+    const count = backfillAnalysisFenKeys(db);
+    expect(count).toBe(0);
   });
 });

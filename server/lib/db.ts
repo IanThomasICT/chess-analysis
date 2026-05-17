@@ -127,6 +127,16 @@ export const migrations: Migration[] = [
       database.run(`CREATE INDEX IF NOT EXISTS idx_annotations_time_class ON annotations(time_class, t)`);
     },
   },
+  {
+    // Migration #6 — fen_key column + index on analysis for transposition lookups (P3.2)
+    id: 6,
+    up: (database: Database) => {
+      database.run("ALTER TABLE analysis ADD COLUMN fen_key TEXT");
+      database.run(
+        "CREATE INDEX IF NOT EXISTS idx_analysis_fen_key ON analysis(fen_key)",
+      );
+    },
+  },
 ];
 
 export function runMigrations(database: Database): void {
