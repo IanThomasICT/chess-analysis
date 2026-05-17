@@ -7,7 +7,7 @@ import analyze from "./routes/analyze";
 import stats from "./routes/stats";
 import positions from "./routes/positions";
 import { rateLimit } from "./lib/rate-limit";
-import { backfillGameHeaders, backfillAnalysisFenKeys } from "./lib/backfill";
+import { backfillGameHeaders, backfillAnalysisFenKeys, backfillMotifs } from "./lib/backfill";
 import { loadOpenings } from "./lib/openings";
 
 loadOpenings();
@@ -18,6 +18,10 @@ if (backfillCount > 0) {
 const fenKeyCount = backfillAnalysisFenKeys();
 if (fenKeyCount > 0) {
   console.log(`Backfilled fen_key for ${String(fenKeyCount)} analysis rows`);
+}
+const motifCount = backfillMotifs();
+if (motifCount > 0) {
+  console.log(`Backfilled motifs for ${String(motifCount)} games`);
 }
 
 const app = new Hono();

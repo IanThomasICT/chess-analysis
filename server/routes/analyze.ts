@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { Chess } from "chess.js";
 import { db } from "../lib/db";
 import { pgnToFens, pgnToMoves } from "../lib/pgn";
 import {
@@ -6,9 +7,21 @@ import {
   acquireAnalysisSlot,
   releaseAnalysisSlot,
 } from "../lib/engine";
+import { tagMoveIfBlunder, type AnalysisSnapshot } from "../lib/motif-tagging";
 
 /** Game IDs: alphanumeric, underscores, hyphens, up to 50 chars */
 const GAME_ID_PATTERN = /^[a-zA-Z0-9_-]{1,50}$/;
+
+/** Convert a SAN move to UCI using chess.js. Returns null if invalid. */
+function sanToUci(fenBefore: string, san: string): string | null {
+  try {
+    const chess = new Chess(fenBefore);
+    const m = chess.move(san);
+    return `${m.from}${m.to}${m.promotion ?? ""}`;
+  } catch {
+    return null;
+  }
+}
 
 interface GameRow {
   id: string;
@@ -60,6 +73,9 @@ analyze.get("/analyze/:gameId", (c) => {
   const stream = new ReadableStream({
     async start(controller) {
       try {
+        let prior: AnalysisSnapshot | null = null;
+        let priorIndex = -1;
+
         for await (const result of analyzeGame(capturedGame.id, fens, moves, multipv)) {
           const data = JSON.stringify({
             moveIndex: result.moveIndex,
@@ -73,6 +89,50 @@ analyze.get("/analyze/:gameId", (c) => {
             total: result.total,
           });
           controller.enqueue(encoder.encode(`data: ${  data  }\n\n`));
+
+          // Motif tagging — rank 1 events only, move_index > 0
+          if (
+            result.multipvRank === 1 &&
+            prior !== null &&
+            result.moveIndex > 0 &&
+            result.moveIndex === priorIndex + 1
+          ) {
+            const playedMoveSan = moves[result.moveIndex - 1];
+            const playedUci = sanToUci(prior.fen, playedMoveSan);
+            if (playedUci !== null) {
+              try {
+                tagMoveIfBlunder(
+                  db,
+                  capturedGame.id,
+                  result.moveIndex,
+                  prior,
+                  {
+                    fen: result.fen,
+                    score_cp: result.scoreCp,
+                    score_mate: result.scoreMate,
+                    best_move: result.bestMove,
+                    pv: result.pv,
+                    move_san: playedMoveSan,
+                  },
+                  playedUci,
+                );
+              } catch {
+                // best-effort: tagging bug must not kill the SSE stream
+              }
+            }
+          }
+
+          if (result.multipvRank === 1) {
+            prior = {
+              fen: result.fen,
+              score_cp: result.scoreCp,
+              score_mate: result.scoreMate,
+              best_move: result.bestMove,
+              pv: result.pv,
+              move_san: moves[result.moveIndex - 1] ?? null,
+            };
+            priorIndex = result.moveIndex;
+          }
         }
 
         // Signal completion

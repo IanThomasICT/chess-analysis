@@ -202,6 +202,18 @@ Migrations are defined inline in `server/lib/db.ts` as an append-only `migration
 
 `MAX_CONCURRENT_ANALYSES` is 1 for Lc0 (single-GPU contention), 2 for Stockfish.
 
+### `blunder_tags`
+
+Motif tags attached to user blunders and mistakes. Composite PK `(game_id, move_index, tag)` — `INSERT OR IGNORE` keeps detection re-runs idempotent.
+
+| Column | Type | Description |
+|---|---|---|
+| `game_id` | TEXT NOT NULL | FK to `games.id` |
+| `move_index` | INTEGER NOT NULL | After-position index (same convention as `analysis.move_index`) |
+| `tag` | TEXT NOT NULL | Motif name (`missed_mate`, `back_rank_mate`, `fork`, `pin`, `skewer`, `hanging_piece`) |
+
+Index: `idx_blunder_tags_tag` on `tag`. Detection capped at 3 tags per position by priority.
+
 ### `annotations`
 
 Manual notes layered onto Elo trend / stats views. CRUD endpoints deferred — render-only for Phase 2.
@@ -262,6 +274,8 @@ server/
     backfill.ts            # Idempotent header + opening backfill on startup
     metrics.ts             # Lichess D1 formulas + gameMetrics() per-side aggregator
     openings.ts            # ECO/Opening TSV loader + classifyOpening longest-prefix match
+    motifs.ts              # Native-TS detectors for 6 tactical motifs
+    motif-tagging.ts       # tagMoveIfBlunder helper writes blunder_tags rows
     rate-limit.ts          # Per-IP in-memory rate limiter
 
 shared/

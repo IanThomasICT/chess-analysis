@@ -206,6 +206,17 @@ games.get("/games/:gameId", (c) => {
   const analyzed = isGameAnalyzed(gameId, fens.length);
   const analysis: AnalysisRow[] = analyzed ? getGameAnalysis(gameId) : [];
 
+  const motifRows = db
+    .prepare(`SELECT move_index, tag FROM blunder_tags WHERE game_id = ?`)
+    .all(gameId) as Array<{ move_index: number; tag: string }>;
+  const motifs: Record<string, string[]> = {};
+  for (const r of motifRows) {
+    const key = String(r.move_index);
+    const arr = motifs[key] ?? [];
+    arr.push(r.tag);
+    motifs[key] = arr;
+  }
+
   return c.json({
     game: {
       id: game.id,
@@ -225,6 +236,7 @@ games.get("/games/:gameId", (c) => {
     moves,
     analysis,
     analyzed,
+    motifs,
   });
 });
 

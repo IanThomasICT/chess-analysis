@@ -3,6 +3,7 @@ import { db } from "./db";
 import { pgnHeaders, pgnToMoves } from "./pgn";
 import { classifyOpening, loadOpenings } from "./openings";
 import { fenKey } from "./engine";
+import { tagMoveIfBlunder } from "./motif-tagging";
 
 interface GameToBackfill {
   id: string;
@@ -98,6 +99,110 @@ export function backfillAnalysisFenKeys(database: Database = db): number {
 
   tx(rows);
   return rows.length;
+}
+
+interface AnalysisSnapshotRow {
+  game_id: string;
+  move_index: number;
+  fen: string;
+  score_cp: number | null;
+  score_mate: number | null;
+  best_move: string;
+  pv: string | null;
+}
+
+interface GameWithPgn {
+  game_id: string;
+  pgn: string;
+}
+
+/**
+ * For each analyzed game that has no entries in `blunder_tags`, detect motifs
+ * on every mistake/blunder position and persist them. Throttled to `limit`
+ * games per run; idempotent.
+ *
+ * Returns the number of games processed.
+ */
+export function backfillMotifs(
+  database: Database = db,
+  limit = 50,
+): number {
+  const candidates = database
+    .prepare(
+      `
+      SELECT DISTINCT a.game_id, g.pgn
+        FROM analysis a
+        JOIN games g ON a.game_id = g.id
+       WHERE a.multipv_rank = 1
+         AND NOT EXISTS (SELECT 1 FROM blunder_tags bt WHERE bt.game_id = a.game_id)
+       LIMIT ?
+    `,
+    )
+    .all(limit) as GameWithPgn[];
+
+  let processed = 0;
+  for (const { game_id, pgn } of candidates) {
+    try {
+      const rows = database
+        .prepare(
+          `
+          SELECT game_id, move_index, fen, score_cp, score_mate, best_move, pv
+            FROM analysis
+           WHERE game_id = ? AND multipv_rank = 1
+           ORDER BY move_index ASC
+        `,
+        )
+        .all(game_id) as AnalysisSnapshotRow[];
+
+      let moves: Array<{ san: string; from: string; to: string }>;
+      try {
+        moves = pgnToMoves(pgn).map((m) => ({
+          san: m.san,
+          from: m.from,
+          to: m.to,
+        }));
+      } catch {
+        continue; // bad PGN — skip
+      }
+
+      for (let i = 1; i < rows.length; i++) {
+        const before = rows[i - 1];
+        const after = rows[i];
+        const move = moves[i - 1];
+        const uci = `${move.from}${move.to}`;
+        try {
+          tagMoveIfBlunder(
+            database,
+            game_id,
+            i,
+            {
+              fen: before.fen,
+              score_cp: before.score_cp,
+              score_mate: before.score_mate,
+              best_move: before.best_move,
+              pv: before.pv,
+              move_san: null,
+            },
+            {
+              fen: after.fen,
+              score_cp: after.score_cp,
+              score_mate: after.score_mate,
+              best_move: after.best_move,
+              pv: after.pv,
+              move_san: move.san,
+            },
+            uci,
+          );
+        } catch {
+          // skip this position on detection error
+        }
+      }
+      processed += 1;
+    } catch {
+      // skip this game on any error
+    }
+  }
+  return processed;
 }
 
 export function parseEloHeader(raw: string | undefined): number | null {

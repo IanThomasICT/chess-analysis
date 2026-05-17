@@ -1,7 +1,7 @@
 import { describe, expect, test, beforeEach } from "bun:test";
 import { Database } from "bun:sqlite";
 import { migrations, type Migration } from "../server/lib/db";
-import { computeBySide, computeEloTrend, computeByTimeOfDay, computeWinRateSlice, computeAclTrend } from "../server/routes/stats";
+import { computeBySide, computeEloTrend, computeByTimeOfDay, computeWinRateSlice, computeAclTrend, computeMotifStats } from "../server/routes/stats";
 
 // ---------------------------------------------------------------------------
 // Schema helpers — apply migrations 1-4 to an in-memory DB
@@ -679,5 +679,67 @@ describe("computeAclTrend", () => {
     const result = computeAclTrend(db, "nobody", "blitz");
 
     expect(result).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// computeMotifStats
+// ---------------------------------------------------------------------------
+
+function insertBlunderTag(
+  database: Database,
+  gameId: string,
+  moveIndex: number,
+  tag: string,
+): void {
+  database
+    .prepare(`INSERT INTO blunder_tags (game_id, move_index, tag) VALUES (?, ?, ?)`)
+    .run(gameId, moveIndex, tag);
+}
+
+describe("computeMotifStats", () => {
+  test("white user blunder on move_index=2 (black mover) is NOT counted", () => {
+    // User alice played white. move_index=2 → (2-1)%2=1 → black mover. NOT user's move.
+    insertFullGame(db, "g1", "alice", "Alice", "Bob", "1-0");
+    insertBlunderTag(db, "g1", 2, "fork");
+
+    const result = computeMotifStats(db, "alice");
+    expect(result).toHaveLength(0);
+  });
+
+  test("white user blunder on move_index=3 (white mover) IS counted", () => {
+    // User alice played white. move_index=3 → (3-1)%2=0 → white mover. IS user's move.
+    insertFullGame(db, "g1", "alice", "Alice", "Bob", "0-1");
+    insertBlunderTag(db, "g1", 3, "fork");
+
+    const result = computeMotifStats(db, "alice");
+    expect(result).toHaveLength(1);
+    expect(result[0].tag).toBe("fork");
+    expect(result[0].count).toBe(1);
+  });
+
+  test("multiple games and tags aggregate correctly, ordered DESC by count", () => {
+    // alice plays white in both games
+    insertFullGame(db, "g1", "alice", "Alice", "Bob", "0-1");
+    insertFullGame(db, "g2", "alice", "Alice", "Bob", "0-1");
+    // move_index=3 → white mover (user), move_index=1 → white mover (user)
+    insertBlunderTag(db, "g1", 3, "fork");
+    insertBlunderTag(db, "g1", 1, "pin");
+    insertBlunderTag(db, "g2", 3, "fork");
+    // fork appears twice, pin once → fork first
+    const result = computeMotifStats(db, "alice");
+    expect(result).toHaveLength(2);
+    expect(result[0].tag).toBe("fork");
+    expect(result[0].count).toBe(2);
+    expect(result[1].tag).toBe("pin");
+    expect(result[1].count).toBe(1);
+  });
+
+  test("unknown user returns empty array", () => {
+    insertFullGame(db, "g1", "alice", "Alice", "Bob", "1-0");
+    insertBlunderTag(db, "g1", 1, "fork");
+
+    const result = computeMotifStats(db, "nobody");
+    expect(result).toHaveLength(0);
   });
 });

@@ -169,6 +169,21 @@ export const migrations: Migration[] = [
       database.run("CREATE INDEX IF NOT EXISTS idx_analysis_fen_key ON analysis(fen_key)");
     },
   },
+  {
+    // Migration #8 — blunder_tags table for per-position blunder classification (P5.2)
+    id: 8,
+    up: (database: Database) => {
+      database.run(`
+        CREATE TABLE IF NOT EXISTS blunder_tags (
+          game_id TEXT NOT NULL,
+          move_index INTEGER NOT NULL,
+          tag TEXT NOT NULL,
+          PRIMARY KEY (game_id, move_index, tag)
+        )
+      `);
+      database.run("CREATE INDEX IF NOT EXISTS idx_blunder_tags_tag ON blunder_tags(tag)");
+    },
+  },
 ];
 
 export function runMigrations(database: Database): void {

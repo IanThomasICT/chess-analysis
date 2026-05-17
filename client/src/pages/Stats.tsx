@@ -7,12 +7,13 @@ import {
   fetchEloTrend,
   fetchAclTrend,
   fetchByTimeOfDay,
+  fetchMotifStats,
   type WinRateSliceType,
 } from "../api";
 import { EloTrendChart } from "../components/EloTrendChart";
 import { AclTrendChart } from "../components/AclTrendChart";
 
-type Tab = "by-side" | "time-class" | "opening" | "rating" | "elo-trend" | "acl-trend" | "time-of-day";
+type Tab = "by-side" | "time-class" | "opening" | "rating" | "elo-trend" | "acl-trend" | "time-of-day" | "motifs";
 
 const TAB_LABELS: Record<Tab, string> = {
   "by-side": "By Side",
@@ -22,6 +23,7 @@ const TAB_LABELS: Record<Tab, string> = {
   "elo-trend": "Elo Trend",
   "acl-trend": "ACL Trend",
   "time-of-day": "Time of Day",
+  "motifs": "Motifs",
 };
 
 const ALL_TABS = Object.keys(TAB_LABELS) as Tab[];
@@ -83,6 +85,7 @@ export function Stats() {
           {tab === "elo-trend" && <EloTrendTab username={username} />}
           {tab === "acl-trend" && <AclTrendTab username={username} />}
           {tab === "time-of-day" && <TimeOfDayTab username={username} />}
+          {tab === "motifs" && <MotifsTab username={username} />}
         </div>
       </main>
     </div>
@@ -386,6 +389,44 @@ function TimeOfDayTab({ username }: TimeOfDayTabProps) {
           ))}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+// ---- Motifs ----
+
+interface MotifsTabProps {
+  username: string;
+}
+
+function MotifsTab({ username }: MotifsTabProps) {
+  const { data, isPending, isError } = useQuery({
+    queryKey: ["stats", "motifs", username],
+    queryFn: async () => fetchMotifStats(username),
+  });
+
+  if (isPending) {return <p className="text-gray-500">Loading&hellip;</p>;}
+  if (isError) {return <p className="text-red-500">Error.</p>;}
+  if (data.length === 0) {return <p className="text-gray-500">No motifs tagged yet.</p>;}
+
+  return (
+    <div className="space-y-2">
+      {data.map((m) => (
+        <div key={m.tag} className="flex items-center gap-3 p-2 rounded border border-gray-200 dark:border-gray-700">
+          <span className="flex-1 text-sm text-gray-900 dark:text-gray-100 capitalize">
+            {m.tag.replace(/_/g, " ")}
+          </span>
+          <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">
+            {m.count}
+          </span>
+          <Link
+            to={`/analysis/${m.example_game_id}?move=${String(m.example_move_index)}`}
+            className="text-xs text-blue-600 hover:underline"
+          >
+            Example &rarr;
+          </Link>
+        </div>
+      ))}
     </div>
   );
 }

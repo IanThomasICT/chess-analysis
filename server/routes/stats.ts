@@ -459,4 +459,74 @@ stats.get("/stats/:username/win-rate", (c) => {
   return c.json(computeWinRateSlice(db, username, slice, from, to));
 });
 
+// ---------------------------------------------------------------------------
+// Motif stats
+// ---------------------------------------------------------------------------
+
+export interface MotifStat {
+  tag: string;
+  count: number;
+  example_game_id: string;
+  example_move_index: number;
+}
+
+interface RawMotifRow {
+  tag: string;
+  count: number;
+  example_game_id: string;
+  example_move_index: number;
+}
+
+/**
+ * Aggregate blunder_tags for moves the USER made (not the opponent).
+ * Mover is white when (move_index - 1) is even; user_color is white when
+ * lower(games.white) === lower(games.username). Only matching pairs are counted.
+ */
+export function computeMotifStats(
+  database: Database,
+  username: string,
+  from?: number,
+  to?: number,
+): MotifStat[] {
+  const lower = username.toLowerCase();
+  const whereDate: string[] = [];
+  const bindDate: number[] = [];
+  if (from !== undefined) { whereDate.push("g.end_time >= ?"); bindDate.push(from); }
+  if (to !== undefined) { whereDate.push("g.end_time <= ?"); bindDate.push(to); }
+  const dateClause = whereDate.length > 0 ? `AND ${whereDate.join(" AND ")}` : "";
+
+  const rows = database
+    .prepare(`
+      SELECT bt.tag AS tag,
+             COUNT(*) AS count,
+             MIN(bt.game_id) AS example_game_id,
+             MIN(bt.move_index) AS example_move_index
+        FROM blunder_tags bt
+        JOIN games g ON bt.game_id = g.id
+       WHERE lower(g.username) = ?
+         AND (
+              (lower(g.white) = lower(g.username) AND ((bt.move_index - 1) % 2) = 0)
+           OR (lower(g.black) = lower(g.username) AND ((bt.move_index - 1) % 2) = 1)
+         )
+         ${dateClause}
+       GROUP BY bt.tag
+       ORDER BY count DESC
+    `)
+    .all(lower, ...bindDate) as RawMotifRow[];
+
+  return rows;
+}
+
+stats.get("/stats/:username/motifs", (c) => {
+  const username = c.req.param("username");
+  if (!USERNAME_PATTERN.test(username)) {
+    return c.json({ error: "Invalid username format" }, 400);
+  }
+  const fromStr = c.req.query("from");
+  const toStr = c.req.query("to");
+  const from = fromStr !== undefined ? parseInt(fromStr, 10) : undefined;
+  const to = toStr !== undefined ? parseInt(toStr, 10) : undefined;
+  return c.json(computeMotifStats(db, username, from, to));
+});
+
 export default stats;

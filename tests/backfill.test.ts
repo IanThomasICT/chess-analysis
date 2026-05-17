@@ -1,7 +1,7 @@
 import { describe, expect, test, beforeEach } from "bun:test";
 import { Database } from "bun:sqlite";
 import type { Migration } from "../server/lib/db";
-import { backfillGameHeaders, backfillAnalysisFenKeys } from "../server/lib/backfill";
+import { backfillGameHeaders, backfillAnalysisFenKeys, backfillMotifs } from "../server/lib/backfill";
 import { fenKey } from "../server/lib/engine";
 import { loadOpenings } from "../server/lib/openings";
 
@@ -41,14 +41,26 @@ function makeDb(): Database {
     CREATE TABLE IF NOT EXISTS analysis (
       game_id TEXT NOT NULL,
       move_index INTEGER NOT NULL,
+      multipv_rank INTEGER NOT NULL DEFAULT 1,
       fen TEXT NOT NULL,
+      fen_key TEXT,
       move_san TEXT,
       score_cp INTEGER,
       score_mate INTEGER,
-      best_move TEXT,
+      best_move TEXT NOT NULL DEFAULT '',
+      pv TEXT,
       depth INTEGER,
-      PRIMARY KEY (game_id, move_index),
+      PRIMARY KEY (game_id, move_index, multipv_rank),
       FOREIGN KEY (game_id) REFERENCES games(id)
+    )
+  `);
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS blunder_tags (
+      game_id TEXT NOT NULL,
+      move_index INTEGER NOT NULL,
+      tag TEXT NOT NULL,
+      PRIMARY KEY (game_id, move_index, tag)
     )
   `);
 
@@ -62,8 +74,7 @@ function makeDb(): Database {
     "CREATE INDEX IF NOT EXISTS idx_analysis_fen ON analysis(fen)",
   );
 
-  // Run migration #6 — fen_key column + index
-  db.run("ALTER TABLE analysis ADD COLUMN fen_key TEXT");
+  // Run migration #6 — fen_key index (column already in schema above)
   db.run(
     "CREATE INDEX IF NOT EXISTS idx_analysis_fen_key ON analysis(fen_key)",
   );
@@ -365,5 +376,156 @@ describe("backfillAnalysisFenKeys", () => {
   test("returns 0 when no rows have fen_key IS NULL", () => {
     const count = backfillAnalysisFenKeys(db);
     expect(count).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// backfillMotifs tests
+// ---------------------------------------------------------------------------
+
+// One-move PGN: 1. e4 → positions 0 (start) and 1 (after e4)
+const ONE_MOVE_PGN = `[White "A"][Black "B"][Result "*"]
+
+1. e4 *`;
+
+// Two-move PGN: 1. e4 e5 → positions 0, 1, 2
+const TWO_MOVE_PGN = `[White "A"][Black "B"][Result "*"]
+
+1. e4 e5 *`;
+
+const START_FEN =
+  "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+const AFTER_E4_FEN =
+  "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1";
+
+function insertGameForMotif(
+  database: Database,
+  gameId: string,
+  pgn: string = ONE_MOVE_PGN,
+): void {
+  database
+    .prepare(
+      `INSERT INTO games (id, username, pgn, white, black, white_elo, black_elo, user_elo)
+       VALUES (?, ?, ?, ?, ?, 1500, 1500, 1500)`,
+    )
+    .run(gameId, "alice", pgn, "A", "B");
+}
+
+function insertAnalysisForMotif(
+  database: Database,
+  gameId: string,
+  moveIndex: number,
+  fen: string,
+  opts: {
+    score_cp?: number | null;
+    score_mate?: number | null;
+    best_move?: string;
+    pv?: string | null;
+  } = {},
+): void {
+  database
+    .prepare(
+      `INSERT INTO analysis
+         (game_id, move_index, multipv_rank, fen, score_cp, score_mate, best_move, pv, depth)
+       VALUES (?, ?, 1, ?, ?, ?, ?, ?, 20)`,
+    )
+    .run(
+      gameId,
+      moveIndex,
+      fen,
+      opts.score_cp ?? null,
+      opts.score_mate ?? null,
+      opts.best_move ?? "",
+      opts.pv ?? null,
+    );
+}
+
+function getBlunderTags(
+  database: Database,
+  gameId: string,
+): Array<{ move_index: number; tag: string }> {
+  return database
+    .prepare(
+      `SELECT move_index, tag FROM blunder_tags WHERE game_id = ? ORDER BY move_index, tag`,
+    )
+    .all(gameId) as Array<{ move_index: number; tag: string }>;
+}
+
+describe("backfillMotifs", () => {
+  test("missed mate-in-2 → returns 1, blunder_tags has missed_mate", () => {
+    insertGameForMotif(db, "g1");
+    // move_index 0: white has mate-in-2 (scoreMateBefore=2)
+    insertAnalysisForMotif(db, "g1", 0, START_FEN, {
+      score_mate: 2,
+      best_move: "e2e4",
+    });
+    // move_index 1: after white plays e4, mate is gone (scoreMateAfter=null, cp=0)
+    insertAnalysisForMotif(db, "g1", 1, AFTER_E4_FEN, {
+      score_cp: 0,
+      best_move: "e7e5",
+    });
+
+    const count = backfillMotifs(db);
+    expect(count).toBe(1);
+
+    const tags = getBlunderTags(db, "g1");
+    const tagNames = tags.map((t) => t.tag);
+    expect(tagNames).toContain("missed_mate");
+  });
+
+  test("no mistakes/blunders → returns 1, no blunder_tags inserted", () => {
+    insertGameForMotif(db, "g2");
+    // Both positions equal — no eval swing
+    insertAnalysisForMotif(db, "g2", 0, START_FEN, {
+      score_cp: 0,
+      best_move: "e2e4",
+    });
+    insertAnalysisForMotif(db, "g2", 1, AFTER_E4_FEN, {
+      score_cp: 0,
+      best_move: "e7e5",
+    });
+
+    const count = backfillMotifs(db);
+    expect(count).toBe(1);
+
+    const tags = getBlunderTags(db, "g2");
+    expect(tags).toHaveLength(0);
+  });
+
+  test("re-running is idempotent — second call returns 0", () => {
+    insertGameForMotif(db, "g3");
+    insertAnalysisForMotif(db, "g3", 0, START_FEN, {
+      score_mate: 2,
+      best_move: "e2e4",
+    });
+    insertAnalysisForMotif(db, "g3", 1, AFTER_E4_FEN, {
+      score_cp: 0,
+      best_move: "e7e5",
+    });
+
+    const first = backfillMotifs(db);
+    expect(first).toBe(1);
+
+    const second = backfillMotifs(db);
+    expect(second).toBe(0);
+  });
+
+  test("limit parameter respected — seed 5 games, call with limit=2 → 2 processed", () => {
+    for (let i = 1; i <= 5; i++) {
+      const gameId = `limit_g${String(i)}`;
+      insertGameForMotif(db, gameId, TWO_MOVE_PGN);
+      // Flat eval — no blunders, but game will still be processed
+      insertAnalysisForMotif(db, gameId, 0, START_FEN, {
+        score_cp: 0,
+        best_move: "e2e4",
+      });
+      insertAnalysisForMotif(db, gameId, 1, AFTER_E4_FEN, {
+        score_cp: 0,
+        best_move: "e7e5",
+      });
+    }
+
+    const count = backfillMotifs(db, 2);
+    expect(count).toBe(2);
   });
 });

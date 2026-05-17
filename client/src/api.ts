@@ -37,6 +37,21 @@ export interface GameMove {
   to: string;
 }
 
+export type Motif =
+  | "hanging_piece"
+  | "fork"
+  | "pin"
+  | "skewer"
+  | "back_rank_mate"
+  | "missed_mate";
+
+export interface MotifStat {
+  tag: Motif;
+  count: number;
+  example_game_id: string;
+  example_move_index: number;
+}
+
 export interface GameDetailResponse {
   game: {
     id: string;
@@ -56,6 +71,7 @@ export interface GameDetailResponse {
   moves: GameMove[];
   analysis: AnalysisRow[];
   analyzed: boolean;
+  motifs: Record<string, string[]>;
 }
 
 export async function fetchGames(username: string): Promise<GamesResponse> {
@@ -245,6 +261,14 @@ export async function fetchAlternatives(
     throw new Error("Failed to fetch alternatives");
   }
   return r.json() as Promise<AlternativesResponse>;
+}
+
+export async function fetchMotifStats(username: string): Promise<MotifStat[]> {
+  const r = await fetch(`/api/stats/${encodeURIComponent(username)}/motifs`);
+  if (!r.ok) {
+    throw new Error("Failed to fetch motif stats");
+  }
+  return r.json() as Promise<MotifStat[]>;
 }
 
 export async function fetchWinRateSlice(

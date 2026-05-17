@@ -6,6 +6,7 @@ interface MoveListProps {
   currentMove: number;
   onSelectMove: (moveIndex: number) => void;
   classifications: MoveClass[];
+  motifs?: Record<string, string[]>;
 }
 
 export const MoveList = memo(function MoveList({
@@ -13,6 +14,7 @@ export const MoveList = memo(function MoveList({
   currentMove,
   onSelectMove,
   classifications,
+  motifs,
 }: MoveListProps) {
   const activeRef = useRef<HTMLButtonElement>(null);
 
@@ -60,6 +62,11 @@ export const MoveList = memo(function MoveList({
                 } ${classToColor(classifications[pair.white.index - 1] ?? "good")}`}
               >
                 {pair.white.san}
+                {(motifs?.[String(pair.white.index)] ?? []).length > 0 && (
+                  <span className="ml-1 text-[10px] text-purple-600 dark:text-purple-300">
+                    {(motifs?.[String(pair.white.index)] ?? []).map((t) => t.charAt(0).toUpperCase()).join("")}
+                  </span>
+                )}
               </button>
               {blackPly !== undefined ? (
                 <button
@@ -73,6 +80,11 @@ export const MoveList = memo(function MoveList({
                   } ${classToColor(classifications[blackPly.index - 1] ?? "good")}`}
                 >
                   {blackPly.san}
+                  {(motifs?.[String(blackPly.index)] ?? []).length > 0 && (
+                    <span className="ml-1 text-[10px] text-purple-600 dark:text-purple-300">
+                      {(motifs?.[String(blackPly.index)] ?? []).map((t) => t.charAt(0).toUpperCase()).join("")}
+                    </span>
+                  )}
                 </button>
               ) : (
                 <span />

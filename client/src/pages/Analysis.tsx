@@ -576,6 +576,7 @@ export function Analysis() {
               currentMove={currentMove}
               onSelectMove={setCurrentMove}
               classifications={moveClassifications}
+              motifs={data.motifs}
             />
           </div>
         </div>
