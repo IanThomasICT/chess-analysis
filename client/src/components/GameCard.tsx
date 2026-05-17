@@ -8,6 +8,21 @@ interface GameCardProps {
   timeClass: string;
   endTime: number;
   username: string;
+  /** Accuracy 0..100 for the searched user's side, if metrics are available. */
+  accuracy?: number;
+  /** Blunder count for the searched user's side. */
+  blunders?: number;
+}
+
+function accuracyColor(acc: number): string {
+  if (acc >= 90) {return "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200";}
+  if (acc >= 70) {return "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200";}
+  return "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200";
+}
+
+function blunderColor(b: number): string {
+  if (b >= 3) {return "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200";}
+  return "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200";
 }
 
 const TIME_CLASS_ICONS: Record<string, string> = {
@@ -63,6 +78,8 @@ export function GameCard({
   timeClass,
   endTime,
   username,
+  accuracy,
+  blunders,
 }: GameCardProps) {
   const date = new Date(endTime * 1000).toLocaleDateString("en-US", {
     month: "short",
@@ -91,6 +108,20 @@ export function GameCard({
       <div className="text-xs text-gray-400 dark:text-gray-500 mt-2">
         {date}
       </div>
+      {(accuracy !== undefined || (blunders !== undefined && blunders > 0)) && (
+        <div className="flex flex-wrap gap-1 mt-2">
+          {accuracy !== undefined && (
+            <span className={`inline-block px-2 py-0.5 rounded text-xs font-semibold ${accuracyColor(accuracy)}`}>
+              {Math.round(accuracy)}% acc
+            </span>
+          )}
+          {blunders !== undefined && blunders > 0 && (
+            <span className={`inline-block px-2 py-0.5 rounded text-xs font-semibold ${blunderColor(blunders)}`}>
+              {blunders} blunder{blunders === 1 ? "" : "s"}
+            </span>
+          )}
+        </div>
+      )}
     </Link>
   );
 }

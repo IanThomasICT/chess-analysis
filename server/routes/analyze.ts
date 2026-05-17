@@ -48,6 +48,9 @@ analyze.get("/analyze/:gameId", (c) => {
     );
   }
 
+  // Invalidate any cached metrics for this game — fresh analysis is about to be written
+  db.prepare(`DELETE FROM game_metrics WHERE game_id = ?`).run(gameId);
+
   const encoder = new TextEncoder();
   const capturedGame = game;
 

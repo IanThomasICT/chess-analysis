@@ -4,6 +4,7 @@ import { secureHeaders } from "hono/secure-headers";
 import { serveStatic } from "hono/bun";
 import games from "./routes/games";
 import analyze from "./routes/analyze";
+import stats from "./routes/stats";
 import { rateLimit } from "./lib/rate-limit";
 import { backfillGameHeaders } from "./lib/backfill";
 
@@ -29,6 +30,7 @@ app.use("/api/analyze/*", rateLimit({ windowMs: 60_000, max: 5 }));
 
 app.route("/api", games);
 app.route("/api", analyze);
+app.route("/api", stats);
 
 // Global error handler — never leak internal details to clients
 app.onError((err, c) => {

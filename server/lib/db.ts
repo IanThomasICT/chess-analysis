@@ -89,6 +89,29 @@ export const migrations: Migration[] = [
       );
     },
   },
+  {
+    // Migration #4 — game_metrics cache table
+    id: 4,
+    up: (database: Database) => {
+      database.run(`
+        CREATE TABLE IF NOT EXISTS game_metrics (
+          game_id TEXT PRIMARY KEY,
+          accuracy_white REAL NOT NULL,
+          accuracy_black REAL NOT NULL,
+          blunders_white INTEGER NOT NULL,
+          mistakes_white INTEGER NOT NULL,
+          inaccuracies_white INTEGER NOT NULL,
+          blunders_black INTEGER NOT NULL,
+          mistakes_black INTEGER NOT NULL,
+          inaccuracies_black INTEGER NOT NULL,
+          acl_white REAL NOT NULL,
+          acl_black REAL NOT NULL,
+          computed_at INTEGER NOT NULL,
+          FOREIGN KEY (game_id) REFERENCES games(id)
+        )
+      `);
+    },
+  },
 ];
 
 export function runMigrations(database: Database): void {

@@ -1,14 +1,21 @@
 import { useState, useEffect, useRef, useMemo, startTransition } from "react";
 import { useParams, Link } from "react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { DrawShape } from "@lichess-org/chessground/draw";
 import type { Key } from "@lichess-org/chessground/types";
-import { fetchGame, type AnalysisRow, type GameMove } from "../api";
+import { fetchGame, fetchGameMetrics, type AnalysisRow, type GameMove, type GameMetrics } from "../api";
 import { ChessBoard } from "../components/ChessBoard";
 import { EvalBar } from "../components/EvalBar";
 import { EvalGraph } from "../components/EvalGraph";
 import { MoveList } from "../components/MoveList";
 import { classifySwing, type MoveClass } from "../lib/classify";
+
+function accuracyChipClass(acc: number): string {
+  const base = "px-2 py-0.5 rounded text-xs font-semibold";
+  if (acc >= 90) {return `${base} bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200`;}
+  if (acc >= 70) {return `${base} bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200`;}
+  return `${base} bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200`;
+}
 
 // Stable empty arrays — avoids new references on every render when data is undefined.
 const EMPTY_FENS: string[] = [];
@@ -56,10 +63,18 @@ interface AnalysisEvent {
 export function Analysis() {
   const { gameId } = useParams<{ gameId: string }>();
 
+  const queryClient = useQueryClient();
+
   const { data, isPending, isError } = useQuery({
     queryKey: ["game", gameId],
     queryFn: async () => fetchGame(gameId ?? ""),
     enabled: gameId !== undefined && gameId !== "",
+  });
+
+  const { data: metrics } = useQuery<GameMetrics>({
+    queryKey: ["metrics", gameId],
+    queryFn: async () => fetchGameMetrics(gameId ?? ""),
+    enabled: gameId !== undefined && gameId !== "" && (data?.analyzed ?? false),
   });
 
   const [currentMove, setCurrentMove] = useState(0);
@@ -142,6 +157,7 @@ export function Analysis() {
       if (eventData.done === true) {
         eventSource.close();
         setIsAnalyzing(false);
+        void queryClient.invalidateQueries({ queryKey: ["metrics", game.id] });
         return;
       }
 
@@ -176,7 +192,7 @@ export function Analysis() {
     return () => {
       eventSource.close();
     };
-  }, [game, analyzed]);
+  }, [game, analyzed, queryClient]);
 
   // Pre-indexed scores: scores[moveIndex] → pawns. Built once when analysis changes.
   const scores = useMemo(() => {
@@ -313,6 +329,34 @@ export function Analysis() {
             <span className="text-sm text-gray-500 dark:text-gray-400">
               {game.timeClass}
             </span>
+            {metrics !== undefined && (
+              <div className="flex items-center gap-2 text-xs">
+                <span className="text-gray-500 dark:text-gray-400">
+                  Accuracy:
+                </span>
+                <span className={accuracyChipClass(metrics.white.accuracy)}>
+                  {Math.round(metrics.white.accuracy)}% W
+                </span>
+                <span className={accuracyChipClass(metrics.black.accuracy)}>
+                  {Math.round(metrics.black.accuracy)}% B
+                </span>
+                {(metrics.white.blunders > 0 || metrics.black.blunders > 0) && (
+                  <span className="text-gray-500 dark:text-gray-400 ml-2">
+                    Blunders:
+                  </span>
+                )}
+                {metrics.white.blunders > 0 && (
+                  <span className="px-2 py-0.5 rounded bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200">
+                    🔴 {metrics.white.blunders} W
+                  </span>
+                )}
+                {metrics.black.blunders > 0 && (
+                  <span className="px-2 py-0.5 rounded bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200">
+                    🔴 {metrics.black.blunders} B
+                  </span>
+                )}
+              </div>
+            )}
           </div>
           {isAnalyzing && (
             <div className="flex items-center gap-2">

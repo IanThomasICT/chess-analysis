@@ -160,6 +160,21 @@ Indexes: `idx_analysis_game_id` on `game_id`, `idx_analysis_fen` on `fen` (for p
 
 All scores normalized to **White's perspective** (positive = White advantage).
 
+### `game_metrics`
+
+Per-game derived metrics cache (Lichess accuracy / blunder counts). Computed lazily on first request, invalidated when an analyze SSE stream starts for the game.
+
+| Column | Type | Description |
+|---|---|---|
+| `game_id` | TEXT PK | FK to `games.id` |
+| `accuracy_white` | REAL NOT NULL | Mover-perspective accuracy 0..100 (arithmetic mean) |
+| `accuracy_black` | REAL NOT NULL | Mover-perspective accuracy 0..100 |
+| `blunders_white` / `blunders_black` | INTEGER NOT NULL | Per-side blunder counts |
+| `mistakes_white` / `mistakes_black` | INTEGER NOT NULL | Per-side mistake counts |
+| `inaccuracies_white` / `inaccuracies_black` | INTEGER NOT NULL | Per-side inaccuracy counts |
+| `acl_white` / `acl_black` | REAL NOT NULL | Average centipawn loss (skip first 8 plies) |
+| `computed_at` | INTEGER NOT NULL | unix epoch (seconds) |
+
 ### `meta`
 
 Migration bookkeeping. Single key `schema_version` tracks the highest applied migration id.
@@ -205,19 +220,23 @@ client/
       EvalBar.tsx          # Vertical evaluation bar (React.memo)
       EvalGraph.tsx        # uPlot canvas eval graph (React.memo)
       MoveList.tsx         # Scrollable move list with annotations (React.memo)
+      GameCard.tsx         # Gallery card; accuracy/blunder chips when metrics present
+      StatsPanel.tsx       # Home page by-side breakdown panel
       GameCard.tsx         # Gallery card for a single game
 
 server/
   index.ts                 # Hono app entry (middleware, route mounting, static serve)
   routes/
-    games.ts               # GET /api/games, GET /api/games/:gameId
-    analyze.ts             # GET /api/analyze/:gameId (SSE stream)
+    games.ts               # GET /api/games, GET /api/games/:gameId, /:id/metrics, /metrics?username=
+    analyze.ts             # GET /api/analyze/:gameId (SSE stream; invalidates game_metrics)
+    stats.ts               # GET /api/stats/:username/by-side
   lib/
     db.ts                  # SQLite singleton + schema + migration runner
     chesscom.ts            # Chess.com PubAPI client
     engine.ts              # UCI subprocess (Stockfish/Lc0) + analysis generator
     pgn.ts                 # PGN -> FEN/move parsing + pgnHeaders (chess.js)
     backfill.ts            # Idempotent header backfill on startup
+    metrics.ts             # Lichess D1 formulas + gameMetrics() per-side aggregator
     rate-limit.ts          # Per-IP in-memory rate limiter
 
 shared/
