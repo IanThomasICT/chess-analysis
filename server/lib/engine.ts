@@ -49,7 +49,7 @@ const SEARCH_MOVETIME: number = ((): number => {
       return n;
     }
   }
-  return 1500;
+  return 1000;
 })();
 
 /**
@@ -348,13 +348,14 @@ async function analyzeSinglePosition(
   fen: string,
   sf: EngineHandle,
   multipv: number,
+  baseMovetimeMs: number,
 ): Promise<AnalysisResult[]> {
   sf.sendCmd(`position fen ${fen}`);
   // MultiPV doesn't cost N× — ranks 2+ piggyback on the rank-1 search tree.
   // 1.5× empirically delivers ~depth-26 single-PV and ~depth-22 multi-PV on
   // modern CPUs, which is plenty for blunder classification.
   const multipvFactor = multipv > 1 ? MULTIPV_MOVETIME_FACTOR : 1;
-  const movetime = Math.round(SEARCH_MOVETIME * multipvFactor);
+  const movetime = Math.round(baseMovetimeMs * multipvFactor);
   sf.sendCmd(`go movetime ${String(movetime)}`);
   const results = await withTimeout(
     readUntilBestMove(sf.reader, multipv),
@@ -384,16 +385,25 @@ export function fenKey(fen: string): string {
   return fen.split(" ").slice(0, 4).join(" ");
 }
 
+export interface AnalyzeGameOpts {
+  /** MultiPV (number of lines per position). Default 1. */
+  multipv?: number;
+  /** Per-position movetime in ms (base; gets MULTIPV_MOVETIME_FACTOR if multipv>1). Default SEARCH_MOVETIME. */
+  movetimeMs?: number;
+  /** Persist results to the analysis table. Default true. Set false for the shallow pass. */
+  persist?: boolean;
+}
+
 /**
- * Analyze all positions in a game and store results in the DB.
+ * Analyze all positions in a game.
  * Yields progress events for each completed (position, multipv rank) pair.
- * @param multipv 1 (default) or 3.
+ * Writes results to the `analysis` table unless `persist: false`.
  */
 export async function* analyzeGame(
   gameId: string,
   fens: string[],
   moves: string[],
-  multipv = 1,
+  opts: AnalyzeGameOpts = {},
 ): AsyncGenerator<{
   moveIndex: number;
   multipvRank: number;
@@ -405,6 +415,9 @@ export async function* analyzeGame(
   depth: number;
   total: number;
 }> {
+  const multipv = opts.multipv ?? 1;
+  const movetimeMs = opts.movetimeMs ?? SEARCH_MOVETIME;
+  const persist = opts.persist ?? true;
   // Full-game cache check: if every position has the requested rank coverage
   // at sufficient depth, yield from the DB and skip spawning the engine.
   const cachedCount = db
@@ -495,23 +508,25 @@ export async function* analyzeGame(
         continue;
       }
 
-      const results = await analyzeSinglePosition(fens[i], sf, multipv);
+      const results = await analyzeSinglePosition(fens[i], sf, multipv, movetimeMs);
       const moveSan = i > 0 ? (moves[i - 1] ?? null) : null;
 
       for (const r of results) {
-        upsert.run(
-          gameId,
-          i,
-          r.multipvRank,
-          fens[i],
-          fenKey(fens[i]),
-          r.multipvRank === 1 ? moveSan : null,
-          r.score.cp,
-          r.score.mate,
-          r.bestMove,
-          r.pv,
-          r.depth,
-        );
+        if (persist) {
+          upsert.run(
+            gameId,
+            i,
+            r.multipvRank,
+            fens[i],
+            fenKey(fens[i]),
+            r.multipvRank === 1 ? moveSan : null,
+            r.score.cp,
+            r.score.mate,
+            r.bestMove,
+            r.pv,
+            r.depth,
+          );
+        }
         yield {
           moveIndex: i,
           multipvRank: r.multipvRank,

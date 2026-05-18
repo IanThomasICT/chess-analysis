@@ -6,8 +6,28 @@ import {
   analyzeGame,
   acquireAnalysisSlot,
   releaseAnalysisSlot,
+  isGameAnalyzed,
 } from "../lib/engine";
 import { tagMoveIfBlunder, type AnalysisSnapshot } from "../lib/motif-tagging";
+
+/**
+ * Two-phase analysis:
+ *   1. Shallow scan — MultiPV=1, ~50ms/pos (sub-10s for typical 110-position games).
+ *      Streams to client immediately so eval bar/graph/move colors populate fast.
+ *      Persisted (rank-1 best moves available in DB right away). Deep phase overwrites.
+ *   2. Deep refinement — MultiPV=3, full SEARCH_MOVETIME, persisted + motif tagging.
+ *
+ * Skipped if the game is already fully analyzed — analyzeGame yields cached rows.
+ * Override with SHALLOW_MOVETIME_MS env var.
+ */
+const SHALLOW_MOVETIME_MS: number = ((): number => {
+  const override = process.env.SHALLOW_MOVETIME_MS;
+  if (override !== undefined && override !== "") {
+    const n = parseInt(override, 10);
+    if (!Number.isNaN(n) && n > 0) {return n;}
+  }
+  return 50;
+})();
 
 /** Game IDs: alphanumeric, underscores, hyphens, up to 50 chars */
 const GAME_ID_PATTERN = /^[a-zA-Z0-9_-]{1,50}$/;
@@ -70,25 +90,63 @@ analyze.get("/analyze/:gameId", (c) => {
   const encoder = new TextEncoder();
   const capturedGame = game;
 
+  const alreadyAnalyzed = isGameAnalyzed(capturedGame.id, fens.length);
+
   const stream = new ReadableStream({
     async start(controller) {
+      const emit = (
+        result: {
+          moveIndex: number;
+          multipvRank: number;
+          fen: string;
+          scoreCp: number | null;
+          scoreMate: number | null;
+          bestMove: string;
+          pv: string;
+          depth: number;
+          total: number;
+        },
+        phase: "shallow" | "deep",
+      ): void => {
+        const data = JSON.stringify({
+          phase,
+          moveIndex: result.moveIndex,
+          multipvRank: result.multipvRank,
+          fen: result.fen,
+          scoreCp: result.scoreCp,
+          scoreMate: result.scoreMate,
+          bestMove: result.bestMove,
+          pv: result.pv,
+          depth: result.depth,
+          total: result.total,
+        });
+        controller.enqueue(encoder.encode(`data: ${data}\n\n`));
+      };
+
       try {
+        // Phase 1 — shallow scan (skipped if game already analyzed; deep phase
+        // will yield cached rows for instant load).
+        if (!alreadyAnalyzed) {
+          // Persist shallow rank-1 — best-move arrow data lands in DB
+          // immediately. Deep phase upserts overwrite with deeper rows.
+          for await (const result of analyzeGame(capturedGame.id, fens, moves, {
+            multipv: 1,
+            movetimeMs: SHALLOW_MOVETIME_MS,
+            persist: true,
+          })) {
+            emit(result, "shallow");
+          }
+        }
+
+        // Phase 2 — deep analysis with MultiPV (persisted + motif tagging).
         let prior: AnalysisSnapshot | null = null;
         let priorIndex = -1;
 
-        for await (const result of analyzeGame(capturedGame.id, fens, moves, multipv)) {
-          const data = JSON.stringify({
-            moveIndex: result.moveIndex,
-            multipvRank: result.multipvRank,
-            fen: result.fen,
-            scoreCp: result.scoreCp,
-            scoreMate: result.scoreMate,
-            bestMove: result.bestMove,
-            pv: result.pv,
-            depth: result.depth,
-            total: result.total,
-          });
-          controller.enqueue(encoder.encode(`data: ${  data  }\n\n`));
+        for await (const result of analyzeGame(capturedGame.id, fens, moves, {
+          multipv,
+          persist: true,
+        })) {
+          emit(result, "deep");
 
           // Motif tagging — rank 1 events only, move_index > 0
           if (

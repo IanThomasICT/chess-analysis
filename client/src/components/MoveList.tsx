@@ -7,11 +7,68 @@ interface MoveListProps {
   onSelectMove: (moveIndex: number) => void;
   classifications: MoveClass[];
   motifs?: Record<string, string[]>;
+  /** True at index i when transition i is a missed conversion by the user. */
+  missedConversions?: boolean[];
+  /** Side controlled by the searched user. Drives dimming of opponent moves. */
+  userIsWhite?: boolean;
 }
 
 /** Replace underscores with spaces so tooltips render "back rank mate" not "back_rank_mate". */
 function motifTitle(tags: string[]): string {
   return tags.map((t) => t.replace(/_/g, " ")).join(", ");
+}
+
+interface PlyProps {
+  san: string;
+  isActive: boolean;
+  isUserPly: boolean;
+  isMissed: boolean;
+  classification: MoveClass;
+  motifTags: string[];
+  onClick: () => void;
+  activeRef?: React.Ref<HTMLButtonElement>;
+}
+
+function Ply({
+  san,
+  isActive,
+  isUserPly,
+  isMissed,
+  classification,
+  motifTags,
+  onClick,
+  activeRef,
+}: PlyProps) {
+  const activeClass = isActive
+    ? "bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200"
+    : "text-gray-900 dark:text-gray-100";
+  const dimClass = isUserPly ? "" : "opacity-50";
+  return (
+    <button
+      type="button"
+      ref={activeRef}
+      onClick={onClick}
+      className={`text-left px-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700 ${activeClass} ${dimClass} ${classToColor(classification)}`}
+    >
+      {san}
+      {motifTags.length > 0 && (
+        <span
+          className="ml-1 text-[10px] text-purple-600 dark:text-purple-300 cursor-help"
+          title={motifTitle(motifTags)}
+        >
+          {motifTags.map((t) => t.charAt(0).toUpperCase()).join("")}
+        </span>
+      )}
+      {isMissed && (
+        <span
+          className="ml-1 text-[10px] px-1 rounded bg-yellow-200 text-yellow-900 dark:bg-yellow-800 dark:text-yellow-100 cursor-help"
+          title="Missed conversion — opponent blundered, you didn't punish"
+        >
+          M
+        </span>
+      )}
+    </button>
+  );
 }
 
 export const MoveList = memo(function MoveList({
@@ -20,6 +77,8 @@ export const MoveList = memo(function MoveList({
   onSelectMove,
   classifications,
   motifs,
+  missedConversions,
+  userIsWhite,
 }: MoveListProps) {
   const activeRef = useRef<HTMLButtonElement>(null);
 
@@ -46,57 +105,44 @@ export const MoveList = memo(function MoveList({
     return pairs;
   }, [moves]);
 
+  // Missing or unspecified userIsWhite defaults to "treat all moves as user's" — keeps
+  // the component usable in contexts where user color isn't known.
+  const whiteIsUser = userIsWhite ?? true;
+  const blackIsUser = userIsWhite === undefined ? true : !userIsWhite;
+
   return (
     <div className="p-2 text-sm">
       <div className="grid grid-cols-[30px_1fr_1fr] gap-y-0.5">
         {movePairs.map((pair) => {
           const blackPly = pair.black;
+          const whiteTransition = pair.white.index - 1;
+          const blackTransition = blackPly !== undefined ? blackPly.index - 1 : -1;
           return (
             <div key={pair.number} className="contents">
               <span className="text-gray-400 dark:text-gray-500 text-right pr-1">
                 {pair.number}.
               </span>
-              <button
-                type="button"
-                ref={currentMove === pair.white.index ? activeRef : null}
+              <Ply
+                san={pair.white.san}
+                isActive={currentMove === pair.white.index}
+                isUserPly={whiteIsUser}
+                isMissed={missedConversions?.[whiteTransition] ?? false}
+                classification={classifications[whiteTransition] ?? "good"}
+                motifTags={motifs?.[String(pair.white.index)] ?? []}
                 onClick={() => { onSelectMove(pair.white.index); }}
-                className={`text-left px-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700 ${
-                  currentMove === pair.white.index
-                    ? "bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200"
-                    : "text-gray-900 dark:text-gray-100"
-                } ${classToColor(classifications[pair.white.index - 1] ?? "good")}`}
-              >
-                {pair.white.san}
-                {(motifs?.[String(pair.white.index)] ?? []).length > 0 && (
-                  <span
-                    className="ml-1 text-[10px] text-purple-600 dark:text-purple-300 cursor-help"
-                    title={motifTitle(motifs?.[String(pair.white.index)] ?? [])}
-                  >
-                    {(motifs?.[String(pair.white.index)] ?? []).map((t) => t.charAt(0).toUpperCase()).join("")}
-                  </span>
-                )}
-              </button>
+                activeRef={currentMove === pair.white.index ? activeRef : undefined}
+              />
               {blackPly !== undefined ? (
-                <button
-                  type="button"
-                  ref={currentMove === blackPly.index ? activeRef : null}
+                <Ply
+                  san={blackPly.san}
+                  isActive={currentMove === blackPly.index}
+                  isUserPly={blackIsUser}
+                  isMissed={missedConversions?.[blackTransition] ?? false}
+                  classification={classifications[blackTransition] ?? "good"}
+                  motifTags={motifs?.[String(blackPly.index)] ?? []}
                   onClick={() => { onSelectMove(blackPly.index); }}
-                  className={`text-left px-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700 ${
-                    currentMove === blackPly.index
-                      ? "bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200"
-                      : "text-gray-900 dark:text-gray-100"
-                  } ${classToColor(classifications[blackPly.index - 1] ?? "good")}`}
-                >
-                  {blackPly.san}
-                  {(motifs?.[String(blackPly.index)] ?? []).length > 0 && (
-                    <span
-                      className="ml-1 text-[10px] text-purple-600 dark:text-purple-300 cursor-help"
-                      title={motifTitle(motifs?.[String(blackPly.index)] ?? [])}
-                    >
-                      {(motifs?.[String(blackPly.index)] ?? []).map((t) => t.charAt(0).toUpperCase()).join("")}
-                    </span>
-                  )}
-                </button>
+                  activeRef={currentMove === blackPly.index ? activeRef : undefined}
+                />
               ) : (
                 <span />
               )}

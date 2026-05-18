@@ -52,6 +52,7 @@ function cpToWp(cp: number): number {
 interface AnalysisEvent {
   done?: boolean;
   error?: string;
+  phase?: "shallow" | "deep";
   moveIndex: number;
   multipvRank?: number;
   fen: string;
@@ -85,6 +86,7 @@ export function Analysis() {
   const [analysis, setAnalysis] = useState<AnalysisRow[]>([]);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [phase, setPhase] = useState<"shallow" | "deep" | null>(null);
   const [userFlipped, setUserFlipped] = useState(false);
   // Deep analysis (MultiPV=3) runs by default — top-3 arrows + AlternativesPanel
   // are visible from the moment a new game is opened, and the engine persists
@@ -136,6 +138,14 @@ export function Analysis() {
     }
   }, [game]);
 
+  // User color — drives the "only count my mistakes" nav. Transition i is the
+  // user's move when (i % 2 === 0) matches (userColor === "white").
+  const userColor: "white" | "black" =
+    game !== undefined && game.username.toLowerCase() === game.black.toLowerCase()
+      ? "black"
+      : "white";
+  const userIsWhite = userColor === "white";
+
   // Keyboard navigation
   useEffect(() => {
     if (fens.length === 0) {return;}
@@ -152,20 +162,21 @@ export function Analysis() {
       if (e.key === "End") {
         setCurrentMove(maxMove);
       }
+      const isUserMove = (i: number): boolean => (i % 2 === 0) === userIsWhite;
       if (e.key.toLowerCase() === "b") {
         e.preventDefault();
         const classes = classificationsRef.current;
         const cur = currentMoveRef.current;
         if (e.shiftKey) {
           for (let i = cur - 2; i >= 0; i--) {
-            if (classes[i] === "blunder") {
+            if (classes[i] === "blunder" && isUserMove(i)) {
               setCurrentMove(i + 1);
               return;
             }
           }
         } else {
           for (let i = cur; i < classes.length; i++) {
-            if (classes[i] === "blunder") {
+            if (classes[i] === "blunder" && isUserMove(i)) {
               setCurrentMove(Math.min(i + 1, maxMove));
               return;
             }
@@ -178,14 +189,35 @@ export function Analysis() {
         const cur = currentMoveRef.current;
         if (e.shiftKey) {
           for (let i = cur - 2; i >= 0; i--) {
-            if (classes[i] === "mistake") {
+            if (classes[i] === "mistake" && isUserMove(i)) {
               setCurrentMove(i + 1);
               return;
             }
           }
         } else {
           for (let i = cur; i < classes.length; i++) {
-            if (classes[i] === "mistake") {
+            if (classes[i] === "mistake" && isUserMove(i)) {
+              setCurrentMove(Math.min(i + 1, maxMove));
+              return;
+            }
+          }
+        }
+      }
+      if (e.key.toLowerCase() === "x") {
+        // "Missed conversion" — opponent blundered, user failed to capitalize.
+        e.preventDefault();
+        const missed = missedConversionsRef.current;
+        const cur = currentMoveRef.current;
+        if (e.shiftKey) {
+          for (let i = cur - 2; i >= 0; i--) {
+            if (missed[i]) {
+              setCurrentMove(i + 1);
+              return;
+            }
+          }
+        } else {
+          for (let i = cur; i < missed.length; i++) {
+            if (missed[i]) {
               setCurrentMove(Math.min(i + 1, maxMove));
               return;
             }
@@ -195,13 +227,14 @@ export function Analysis() {
     };
     window.addEventListener("keydown", handler);
     return () => { window.removeEventListener("keydown", handler); };
-  }, [maxMove, fens.length]);
+  }, [maxMove, fens.length, userIsWhite]);
 
   // Refs so keyboard handler always sees latest values without re-registering.
   // Declared here (before the keyboard useEffect) to satisfy rules-of-hooks order.
   // The .current assignments happen after moveClassifications is computed below.
   const currentMoveRef = useRef(currentMove);
   const classificationsRef = useRef<MoveClass[]>([]);
+  const missedConversionsRef = useRef<boolean[]>([]);
 
   // Auto-start analysis via SSE when game loads (if not already analyzed).
   // The setIsAnalyzing/setProgress calls below are part of the init sequence,
@@ -215,11 +248,13 @@ export function Analysis() {
     analysisStartedRef.current = true;
     setIsAnalyzing(true);
     setProgress(0);
+    setPhase("shallow");
 
-    const results: AnalysisRow[] = [];
-    // MultiPV=3 by default — engine emits 3 events per position (rank 1/2/3).
-    // Only rank 1 feeds the analysis state (eval graph, move list, recurrence).
-    // Ranks 2/3 are persisted server-side; AlternativesPanel fetches them lazily.
+    // Two-phase SSE: server streams shallow (MultiPV=1, ~150ms/pos) then deep
+    // (MultiPV=3, full movetime). Deep events overwrite shallow rows by
+    // move_index. Keyed Map keeps state in sync without push/replace logic.
+    const resultsByIndex = new Map<number, AnalysisRow>();
+    let currentPhase: "shallow" | "deep" = "shallow";
     const eventSource = new EventSource(`/api/analyze/${game.id}?multipv=3`);
 
     eventSource.onmessage = (event: MessageEvent<string>) => {
@@ -228,6 +263,7 @@ export function Analysis() {
       if (eventData.done === true) {
         eventSource.close();
         setIsAnalyzing(false);
+        setPhase(null);
         void queryClient.invalidateQueries({ queryKey: ["metrics", game.id] });
         void queryClient.invalidateQueries({ queryKey: ["alternatives", game.id] });
         return;
@@ -236,17 +272,26 @@ export function Analysis() {
       if (eventData.error !== undefined) {
         eventSource.close();
         setIsAnalyzing(false);
+        setPhase(null);
         console.error("Analysis error:", eventData.error);
         return;
       }
 
-      // Skip non-rank-1 events for analysis-state updates.
+      // Phase transition — reset progress when deep starts after shallow.
+      const evPhase = eventData.phase ?? "deep";
+      if (evPhase !== currentPhase) {
+        currentPhase = evPhase;
+        setPhase(evPhase);
+        setProgress(0);
+      }
+
+      // Skip non-rank-1 events for analysis-state updates (rank 2/3 fed via AlternativesPanel).
       const rank = eventData.multipvRank ?? 1;
       if (rank !== 1) {
         return;
       }
 
-      results.push({
+      resultsByIndex.set(eventData.moveIndex, {
         move_index: eventData.moveIndex,
         fen: eventData.fen,
         fen_key: null,
@@ -259,7 +304,9 @@ export function Analysis() {
       });
 
       startTransition(() => {
-        setAnalysis([...results]);
+        setAnalysis(
+          [...resultsByIndex.values()].sort((a, b) => a.move_index - b.move_index),
+        );
       });
       setProgress(((eventData.moveIndex + 1) / eventData.total) * 100);
     };
@@ -267,6 +314,7 @@ export function Analysis() {
     eventSource.onerror = () => {
       eventSource.close();
       setIsAnalyzing(false);
+      setPhase(null);
     };
 
     return () => {
@@ -374,9 +422,24 @@ export function Analysis() {
     return classes;
   }, [analysis, fens.length]);
 
+  // "Missed conversion" — user followed an opponent blunder without playing
+  // near-best. Only flagged on the user's transitions. Length matches
+  // moveClassifications so indices align.
+  const missedConversions = useMemo(() => {
+    const missed: boolean[] = [];
+    for (let i = 0; i < moveClassifications.length; i++) {
+      const isUserMove = (i % 2 === 0) === userIsWhite;
+      const prevWasOppBlunder = i > 0 && moveClassifications[i - 1] === "blunder";
+      const userNotBest = moveClassifications[i] !== "best";
+      missed.push(isUserMove && prevWasOppBlunder && userNotBest);
+    }
+    return missed;
+  }, [moveClassifications, userIsWhite]);
+
   // Keep refs in sync so the keyboard handler sees the latest values each event.
   currentMoveRef.current = currentMove;
   classificationsRef.current = moveClassifications;
+  missedConversionsRef.current = missedConversions;
 
   // Stable SAN array so MoveList gets a consistent reference.
   const moveSans = useMemo(() => moves.map((m) => m.san), [moves]);
@@ -389,9 +452,13 @@ export function Analysis() {
       : undefined;
   }, [currentMove, moves]);
 
+  function isUserMoveIdx(i: number): boolean {
+    return (i % 2 === 0) === userIsWhite;
+  }
+
   function goToNext(klass: MoveClass) {
     for (let i = currentMove; i < moveClassifications.length; i++) {
-      if (moveClassifications[i] === klass) {
+      if (moveClassifications[i] === klass && isUserMoveIdx(i)) {
         setCurrentMove(Math.min(i + 1, maxMove));
         return;
       }
@@ -400,7 +467,25 @@ export function Analysis() {
 
   function goToPrev(klass: MoveClass) {
     for (let i = currentMove - 2; i >= 0; i--) {
-      if (moveClassifications[i] === klass) {
+      if (moveClassifications[i] === klass && isUserMoveIdx(i)) {
+        setCurrentMove(i + 1);
+        return;
+      }
+    }
+  }
+
+  function goToNextMissed() {
+    for (let i = currentMove; i < missedConversions.length; i++) {
+      if (missedConversions[i]) {
+        setCurrentMove(Math.min(i + 1, maxMove));
+        return;
+      }
+    }
+  }
+
+  function goToPrevMissed() {
+    for (let i = currentMove - 2; i >= 0; i--) {
+      if (missedConversions[i]) {
         setCurrentMove(i + 1);
         return;
       }
@@ -489,9 +574,14 @@ export function Analysis() {
           </div>
           {isAnalyzing && (
             <div className="flex items-center gap-2">
+              {phase !== null && (
+                <span className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                  {phase === "shallow" ? "Quick scan" : "Deepening"}
+                </span>
+              )}
               <div className="w-32 h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
                 <div
-                  className="h-full bg-blue-600 transition-all duration-300"
+                  className={`h-full transition-all duration-300 ${phase === "shallow" ? "bg-amber-500" : "bg-blue-600"}`}
                   style={{ width: `${progressStr}%` }}
                 />
               </div>
@@ -543,6 +633,8 @@ export function Analysis() {
               onSelectMove={setCurrentMove}
               classifications={moveClassifications}
               motifs={data.motifs}
+              missedConversions={missedConversions}
+              userIsWhite={userIsWhite}
             />
           </div>
         </div>
@@ -602,14 +694,15 @@ export function Analysis() {
           </button>
         </div>
 
-        {/* Blunder / Mistake navigation — only when analysis is available */}
+        {/* Blunder / Mistake / Missed navigation — only counts user's moves.
+            Missed = opponent blundered, user failed to play near-best response. */}
         {moveClassifications.length > 0 && (
           <div className="mt-2 flex items-center justify-center gap-2">
             <button
               type="button"
               onClick={() => { goToPrev("blunder"); }}
               className="px-2 py-1 text-xs rounded bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200"
-              title="Previous blunder (Shift+B)"
+              title="Previous blunder (Shift+B) — my moves only"
             >
               &larr; Blunder
             </button>
@@ -617,7 +710,7 @@ export function Analysis() {
               type="button"
               onClick={() => { goToNext("blunder"); }}
               className="px-2 py-1 text-xs rounded bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200"
-              title="Next blunder (B)"
+              title="Next blunder (B) — my moves only"
             >
               Blunder &rarr;
             </button>
@@ -625,7 +718,7 @@ export function Analysis() {
               type="button"
               onClick={() => { goToPrev("mistake"); }}
               className="px-2 py-1 text-xs rounded bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200"
-              title="Previous mistake (Shift+M)"
+              title="Previous mistake (Shift+M) — my moves only"
             >
               &larr; Mistake
             </button>
@@ -633,9 +726,25 @@ export function Analysis() {
               type="button"
               onClick={() => { goToNext("mistake"); }}
               className="px-2 py-1 text-xs rounded bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200"
-              title="Next mistake (M)"
+              title="Next mistake (M) — my moves only"
             >
               Mistake &rarr;
+            </button>
+            <button
+              type="button"
+              onClick={goToPrevMissed}
+              className="px-2 py-1 text-xs rounded bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200"
+              title="Previous missed conversion (Shift+X) — opponent blundered, I didn't punish"
+            >
+              &larr; Missed
+            </button>
+            <button
+              type="button"
+              onClick={goToNextMissed}
+              className="px-2 py-1 text-xs rounded bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200"
+              title="Next missed conversion (X) — opponent blundered, I didn't punish"
+            >
+              Missed &rarr;
             </button>
           </div>
         )}
