@@ -1,4 +1,5 @@
 import { Database, type Statement } from "bun:sqlite";
+import { pgnFinalClocks, pgnHeaders } from "./pgn";
 
 export const db = new Database("analysis.db", { create: true });
 
@@ -207,6 +208,33 @@ export const migrations: Migration[] = [
         )
       `);
       database.run("CREATE INDEX IF NOT EXISTS idx_drill_due ON drill_attempts(username, due)");
+    },
+  },
+  {
+    // Migration #10 — final-clock + termination columns on games.
+    // Backfill from existing PGNs in the same transaction so the new columns
+    // are populated immediately, not only for new ingests.
+    id: 10,
+    up: (database: Database) => {
+      database.run("ALTER TABLE games ADD COLUMN white_clock_final_s REAL");
+      database.run("ALTER TABLE games ADD COLUMN black_clock_final_s REAL");
+      database.run("ALTER TABLE games ADD COLUMN termination TEXT");
+
+      const rows = database
+        .prepare("SELECT id, pgn FROM games")
+        .all() as Array<{ id: string; pgn: string }>;
+      const update = database.prepare(
+        "UPDATE games SET white_clock_final_s = ?, black_clock_final_s = ?, termination = ? WHERE id = ?",
+      );
+      for (const row of rows) {
+        try {
+          const clocks = pgnFinalClocks(row.pgn);
+          const termination = pgnHeaders(row.pgn).Termination ?? null;
+          update.run(clocks.white, clocks.black, termination, row.id);
+        } catch {
+          // skip games with unparseable PGN
+        }
+      }
     },
   },
 ];

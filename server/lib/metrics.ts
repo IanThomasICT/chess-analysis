@@ -40,11 +40,54 @@ export function classifyMove(wpBefore: number, wpAfter: number): MoveClass {
 }
 
 export interface PerSideMetrics {
-  accuracy: number;      // 0..100 arithmetic mean
+  accuracy: number;      // 0..100 — bucket-based weighted mean (see classAccuracyScore)
   blunders: number;
   mistakes: number;
   inaccuracies: number;
   acl: number;           // average centipawn loss (skip first 8 plies, only positive losses)
+}
+
+/**
+ * Map a move classification to an accuracy bucket score, Chess.com-style.
+ * Chess.com's CAPS2 is proprietary, but their published behaviour is
+ * "category-based with dampening". We use the same shape with conservative
+ * scores derived from the wp-delta thresholds.
+ */
+function classAccuracyScore(c: MoveClass): number {
+  switch (c) {
+    case "best":       return 100;
+    case "good":       return 90;
+    case "inaccuracy": return 70;
+    case "mistake":    return 40;
+    case "blunder":    return 10;
+  }
+}
+
+/** Weight applied to a blunder beyond the first in a consecutive run. */
+const CONSECUTIVE_BLUNDER_DAMPING = 0.3;
+
+/**
+ * Game-level accuracy aggregation. Takes a flat array of (classification, score)
+ * for one side and returns 0..100. Consecutive blunders past the first are
+ * dampened so a single bad streak doesn't tank the whole game's accuracy.
+ */
+export function aggregateAccuracy(classes: MoveClass[]): number {
+  if (classes.length === 0) {return 0;}
+  let weightedSum = 0;
+  let weightTotal = 0;
+  let consecutiveBlunders = 0;
+  for (const c of classes) {
+    let weight = 1;
+    if (c === "blunder") {
+      consecutiveBlunders++;
+      if (consecutiveBlunders > 1) {weight = CONSECUTIVE_BLUNDER_DAMPING;}
+    } else {
+      consecutiveBlunders = 0;
+    }
+    weightedSum += classAccuracyScore(c) * weight;
+    weightTotal += weight;
+  }
+  return weightTotal > 0 ? weightedSum / weightTotal : 0;
 }
 
 const ZERO_METRICS: PerSideMetrics = {
@@ -81,8 +124,7 @@ export function gameMetrics(
   }
 
   // Per-side accumulators
-  const accuracySums = { w: 0, b: 0 };
-  const accuracyCounts = { w: 0, b: 0 };
+  const classes: { w: MoveClass[]; b: MoveClass[] } = { w: [], b: [] };
   const counts = {
     w: { blunders: 0, mistakes: 0, inaccuracies: 0 },
     b: { blunders: 0, mistakes: 0, inaccuracies: 0 },
@@ -109,13 +151,9 @@ export function gameMetrics(
     const wpBefore = cpToWinPct(cpBeforeMover);
     const wpAfter = cpToWinPct(cpAfterMover);
 
-    // Accuracy for this move
-    const acc = moveAccuracy(wpBefore, wpAfter);
-    accuracySums[side] += acc;
-    accuracyCounts[side]++;
-
     // Classification (applies to all plies including first 8)
     const cls = classifyMove(wpBefore, wpAfter);
+    classes[side].push(cls);
     if (cls === "blunder") {counts[side].blunders++;}
     else if (cls === "mistake") {counts[side].mistakes++;}
     else if (cls === "inaccuracy") {counts[side].inaccuracies++;}
@@ -130,8 +168,7 @@ export function gameMetrics(
   }
 
   const makeMetrics = (side: "w" | "b"): PerSideMetrics => ({
-    accuracy:
-      accuracyCounts[side] > 0 ? accuracySums[side] / accuracyCounts[side] : 0,
+    accuracy: aggregateAccuracy(classes[side]),
     blunders: counts[side].blunders,
     mistakes: counts[side].mistakes,
     inaccuracies: counts[side].inaccuracies,

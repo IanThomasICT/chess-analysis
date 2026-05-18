@@ -8,9 +8,23 @@ The analysis system has three layers:
 2. **SSE streaming endpoint** (`server/routes/analyze.ts`) -- streams results to the browser
 3. **Analysis UI** (`client/src/pages/Analysis.tsx`) -- renders board, eval bar, graph, move list
 
-## Deep analysis (MultiPV)
+## Two-phase analysis (shallow → deep)
 
-The analyze SSE endpoint accepts `?multipv=3`. The engine is re-initialised with `MultiPV=3`, search time scales proportionally (`SEARCH_MOVETIME * 3`), and each position yields **three** SSE events (one per `multipvRank`, ordered 1..3 with rank 1 being the best line). All three are persisted to `analysis` with the composite PK `(game_id, move_index, multipv_rank)`.
+The analyze SSE endpoint runs **two phases in sequence** for any not-yet-analyzed game:
+
+1. **Shallow scan** — `MultiPV=1`, `SHALLOW_MOVETIME_MS` (default 50ms) per position. Hits sub-10s wall time for ~110-position games. Each event carries `phase: "shallow"`. Rank-1 rows are persisted so the best-move arrow lands in the DB immediately; deep phase overwrites with refined values via upsert.
+2. **Deep refinement** — `MultiPV=3` (when requested via `?multipv=3`), full `SEARCH_MOVETIME` per position. Events carry `phase: "deep"`. Motif tagging runs only during this phase (shallow eval isn't precise enough to trust for blunder detection).
+
+When the game is already fully analyzed (`isGameAnalyzed(gameId, fens.length) === true`), phase 1 is skipped — phase 2's cache check yields cached rows instantly.
+
+Both phases can be tuned via env vars:
+
+| Env var | Default | Purpose |
+|---|---|---|
+| `SHALLOW_MOVETIME_MS` | 50 | per-position movetime for phase 1 |
+| `SEARCH_MOVETIME_MS` | 1000 | per-position movetime for phase 2 (MultiPV=1) |
+| `STOCKFISH_THREADS` | floor(cpus * 0.75), min 2 | threads option |
+| `STOCKFISH_HASH_MB` | 1024 | Hash table size |
 
 The Analysis page **runs deep analysis by default** for any newly-opened game (the auto-start `EventSource` URL is `/api/analyze/:id?multipv=3`). Rank-1 events feed the eval graph / move list / metrics state; rank-2/3 events are persisted server-side and fetched lazily by `AlternativesPanel` per position.
 - Top-3 engine lines render as graduated arrows on the board (blue / paleBlue / green).

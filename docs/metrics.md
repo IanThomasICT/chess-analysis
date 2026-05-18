@@ -40,7 +40,20 @@ mateToCp    = sign(mate) * 1000                                       // mate no
 
 `gameMetrics(positions: AnalysisRow[]): { white, black }` walks position transitions `i → i+1`. The mover for transition `i` is `i % 2 === 0 ? "w" : "b"`.
 
-- **Accuracy**: arithmetic mean of `moveAccuracy(wpBefore, wpAfter)` per side (mover's perspective).
+- **Accuracy**: bucket-based Chess.com-style score, computed by `aggregateAccuracy(classes)`. Each move gets a bucket score from its classification:
+
+  | Class | Score |
+  |---|---|
+  | best | 100 |
+  | good | 90 |
+  | inaccuracy | 70 |
+  | mistake | 40 |
+  | blunder | 10 |
+
+  Consecutive blunders past the first in a run are weighted at `CONSECUTIVE_BLUNDER_DAMPING = 0.3` so one bad streak doesn't tank the whole game's number. Final value = weighted mean of bucket scores.
+
+  > Chess.com's CAPS2 is proprietary. This shape matches their published behaviour (category-based, with multi-blunder dampening) and produces numbers in the same range, but is not a bit-exact replica.
+
 - **Blunders / mistakes / inaccuracies**: counts per side from `classifyMove`. All plies count (opening book included for visibility).
 - **ACL**: `mean(max(0, cpBefore - cpAfter))` per side, skipping the first 8 plies. Per-move loss capped at 1000.
 

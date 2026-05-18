@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import type { Database } from "bun:sqlite";
 import { db } from "../lib/db";
 import { fetchRecentGames, type ChessComGame } from "../lib/chesscom";
-import { pgnToFens, pgnToMoves, pgnHeaders } from "../lib/pgn";
+import { pgnToFens, pgnToMoves, pgnHeaders, pgnFinalClocks } from "../lib/pgn";
 import { isGameAnalyzed, getGameAnalysis, type AnalysisRow } from "../lib/engine";
 import { parseEloHeader } from "../lib/backfill";
 import { classifyOpening } from "../lib/openings";
@@ -37,6 +37,9 @@ interface GameRow {
   user_elo: number | null;
   eco: string | null;
   opening: string | null;
+  white_clock_final_s: number | null;
+  black_clock_final_s: number | null;
+  termination: string | null;
 }
 
 export interface GameRowData {
@@ -53,6 +56,9 @@ export interface GameRowData {
   user_elo: number | null;
   eco: string | null;
   opening: string | null;
+  white_clock_final_s: number | null;
+  black_clock_final_s: number | null;
+  termination: string | null;
 }
 
 /** Build a fully-populated game row from a ChessComGame and the requesting username. */
@@ -93,6 +99,9 @@ export function buildGameRow(
     }
   }
 
+  const clocks = pgnFinalClocks(g.pgn);
+  const termination = normalizeHeader(h.Termination);
+
   return {
     id: gameId,
     username: username.toLowerCase(),
@@ -107,6 +116,9 @@ export function buildGameRow(
     user_elo,
     eco,
     opening,
+    white_clock_final_s: clocks.white,
+    black_clock_final_s: clocks.black,
+    termination,
   };
 }
 
@@ -142,8 +154,9 @@ games.get("/games", async (c) => {
     const upsert = db.prepare(`
       INSERT OR REPLACE INTO games
         (id, username, pgn, white, black, result, time_class, end_time,
-         white_elo, black_elo, user_elo, eco, opening)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         white_elo, black_elo, user_elo, eco, opening,
+         white_clock_final_s, black_clock_final_s, termination)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const upsertMany = db.transaction((gamesToUpsert: ChessComGame[]) => {
@@ -163,6 +176,9 @@ games.get("/games", async (c) => {
           row.user_elo,
           row.eco,
           row.opening,
+          row.white_clock_final_s,
+          row.black_clock_final_s,
+          row.termination,
         );
       }
     });
@@ -178,7 +194,8 @@ games.get("/games", async (c) => {
   const rows = db
     .prepare(
       `SELECT id, username, pgn, white, black, result, time_class, end_time,
-              white_elo, black_elo, user_elo, eco, opening
+              white_elo, black_elo, user_elo, eco, opening,
+              white_clock_final_s, black_clock_final_s, termination
        FROM games
        WHERE username = ?
        ORDER BY end_time DESC`,
@@ -244,6 +261,9 @@ games.get("/games/:gameId", (c) => {
       userElo: game.user_elo,
       eco: game.eco,
       opening: game.opening,
+      whiteClockFinalS: game.white_clock_final_s,
+      blackClockFinalS: game.black_clock_final_s,
+      termination: game.termination,
     },
     fens,
     moves,

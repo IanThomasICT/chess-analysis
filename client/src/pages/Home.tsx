@@ -263,6 +263,9 @@ export function Home() {
                     username={username}
                     accuracy={acc}
                     blunders={blunders}
+                    whiteClockFinalS={g.white_clock_final_s}
+                    blackClockFinalS={g.black_clock_final_s}
+                    termination={g.termination}
                   />
                 );
               })}

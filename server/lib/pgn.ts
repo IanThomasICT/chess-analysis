@@ -74,3 +74,46 @@ export function pgnHeaders(pgn: string): PgnHeaders {
 export function getGameResult(pgn: string): string | null {
   return pgnHeaders(pgn).Result ?? null;
 }
+
+/**
+ * Parse a `[%clk H:MM:SS.S]` string into total seconds. Returns null if unparseable.
+ */
+function clkToSeconds(clk: string): number | null {
+  const m = /^(\d+):(\d+):(\d+(?:\.\d+)?)$/.exec(clk);
+  if (m === null) {return null;}
+  const h = parseInt(m[1], 10);
+  const min = parseInt(m[2], 10);
+  const sec = parseFloat(m[3]);
+  if (Number.isNaN(h) || Number.isNaN(min) || Number.isNaN(sec)) {return null;}
+  return h * 3600 + min * 60 + sec;
+}
+
+/**
+ * Walk PGN move list and pull the final `[%clk ...]` annotation for each side.
+ * Chess.com PGNs annotate every move with the player's remaining clock AFTER they moved.
+ * Plies alternate white/black starting from white; the LAST annotation for each side
+ * is that side's remaining clock at the end of their last move played.
+ *
+ * Returns `{ white, black }` in seconds (float). Either side may be null if the PGN
+ * has no clock annotations (e.g. daily games or older imports).
+ */
+export function pgnFinalClocks(pgn: string): {
+  white: number | null;
+  black: number | null;
+} {
+  const re = /\[%clk\s+([\d:.]+)\]/g;
+  let i = 0;
+  let lastWhite: number | null = null;
+  let lastBlack: number | null = null;
+  let m = re.exec(pgn);
+  while (m !== null) {
+    const secs = clkToSeconds(m[1]);
+    if (secs !== null) {
+      if (i % 2 === 0) {lastWhite = secs;}
+      else {lastBlack = secs;}
+    }
+    i++;
+    m = re.exec(pgn);
+  }
+  return { white: lastWhite, black: lastBlack };
+}

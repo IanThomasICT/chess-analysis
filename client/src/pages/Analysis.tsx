@@ -521,6 +521,22 @@ export function Analysis() {
   const topIsBlack = orientation === "white";
   const isSearchedUserTop = game.username.toLowerCase() === topPlayerName.toLowerCase();
   const isSearchedUserBottom = game.username.toLowerCase() === bottomPlayerName.toLowerCase();
+  const topClock = orientation === "white" ? game.blackClockFinalS : game.whiteClockFinalS;
+  const bottomClock = orientation === "white" ? game.whiteClockFinalS : game.blackClockFinalS;
+
+  function fmtClock(secs: number): string {
+    const total = Math.max(0, Math.floor(secs));
+    const h = Math.floor(total / 3600);
+    const m = Math.floor((total % 3600) / 60);
+    const s = total % 60;
+    const ss = String(s).padStart(2, "0");
+    if (h > 0) {return `${String(h)}:${String(m).padStart(2, "0")}:${ss}`;}
+    return `${String(m)}:${ss}`;
+  }
+
+  const lostOnTime =
+    typeof game.termination === "string" &&
+    game.termination.toLowerCase().includes("on time");
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-950 flex flex-col">
@@ -543,6 +559,14 @@ export function Analysis() {
             <span className="text-sm text-gray-500 dark:text-gray-400">
               {game.timeClass}
             </span>
+            {lostOnTime && (
+              <span
+                className="text-xs px-2 py-0.5 rounded bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200"
+                title={game.termination ?? "Won on time"}
+              >
+                ⏱ on time
+              </span>
+            )}
             {metrics !== undefined && (
               <div className="flex items-center gap-2 text-xs">
                 <span className="text-gray-500 dark:text-gray-400">
@@ -609,6 +633,18 @@ export function Analysis() {
               <span className={`text-sm truncate ${isSearchedUserTop ? "font-semibold text-gray-900 dark:text-white" : "text-gray-600 dark:text-gray-400"}`}>
                 {topPlayerName}
               </span>
+              {typeof topClock === "number" && (
+                <span
+                  className={`ml-auto text-xs font-mono px-1.5 py-0.5 rounded ${
+                    topClock <= 0.1
+                      ? "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200"
+                      : "text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-800"
+                  }`}
+                  title={topClock <= 0.1 ? "Flagged — ran out of time" : "Final clock"}
+                >
+                  {fmtClock(topClock)}
+                </span>
+              )}
             </div>
             {/* Chessground Board */}
             <div className="flex-1 min-h-0 flex items-center justify-center">
@@ -622,6 +658,18 @@ export function Analysis() {
               <span className={`text-sm truncate ${isSearchedUserBottom ? "font-semibold text-gray-900 dark:text-white" : "text-gray-600 dark:text-gray-400"}`}>
                 {bottomPlayerName}
               </span>
+              {typeof bottomClock === "number" && (
+                <span
+                  className={`ml-auto text-xs font-mono px-1.5 py-0.5 rounded ${
+                    bottomClock <= 0.1
+                      ? "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200"
+                      : "text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-800"
+                  }`}
+                  title={bottomClock <= 0.1 ? "Flagged — ran out of time" : "Final clock"}
+                >
+                  {fmtClock(bottomClock)}
+                </span>
+              )}
             </div>
           </div>
 
