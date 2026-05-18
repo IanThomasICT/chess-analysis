@@ -1,6 +1,7 @@
 import { db } from "./db";
 
 import { existsSync } from "node:fs";
+import { cpus } from "node:os";
 
 // ── Engine configuration (env-driven) ────────────────────────────────────────
 const ENGINE_TYPE = (process.env.ENGINE_TYPE ?? "stockfish") as "stockfish" | "lc0";
@@ -36,14 +37,68 @@ function resolveEnginePath(): string {
 
 const ENGINE_PATH: string = resolveEnginePath();
 
-/** Max time per position in ms. Higher values find shorter/more accurate mating lines. */
-const SEARCH_MOVETIME = 1500;
+/**
+ * Max time per position in ms. Higher values find shorter/more accurate mating
+ * lines. Override with `SEARCH_MOVETIME_MS` env var.
+ */
+const SEARCH_MOVETIME: number = ((): number => {
+  const override = process.env.SEARCH_MOVETIME_MS;
+  if (override !== undefined && override !== "") {
+    const n = parseInt(override, 10);
+    if (!Number.isNaN(n) && n > 0) {
+      return n;
+    }
+  }
+  return 1500;
+})();
 
-/** Minimum depth to accept from cache. Movetime search at 1500ms typically reaches 20-30+. */
-const MIN_CACHE_DEPTH = 16;
+/**
+ * Movetime multiplier for MultiPV searches. Stockfish needs more time to find
+ * N strong lines instead of one, but the marginal cost of ranks 2/3 is well
+ * below the full N× of the rank 1 line — `1.5×` keeps eval quality high while
+ * cutting wall time roughly in half compared to a naïve `N×` multiplier.
+ */
+const MULTIPV_MOVETIME_FACTOR = 1.5;
+
+/**
+ * Minimum depth to consider a cached row "good enough" — below this, the auto-
+ * start will re-run. MultiPV=3 at 2250ms typically reaches depth 18–22 on most
+ * positions but can fall to 13–15 on late-game tactical positions, so the
+ * threshold lives below the worst observed depth.
+ */
+const MIN_CACHE_DEPTH = 12;
 
 /** Timeout per position — abort if engine doesn't respond within this time. */
 const POSITION_TIMEOUT_MS = 10_000;
+
+/**
+ * Engine thread count. Stockfish scales near-linearly up to physical core
+ * count; using ~75% of logical CPUs leaves headroom for the rest of the app.
+ * Override with `STOCKFISH_THREADS` env var.
+ */
+const STOCKFISH_THREADS: number = ((): number => {
+  const override = process.env.STOCKFISH_THREADS;
+  if (override !== undefined && override !== "") {
+    const n = parseInt(override, 10);
+    if (!Number.isNaN(n) && n > 0) {
+      return n;
+    }
+  }
+  const n = cpus().length;
+  return Math.max(2, Math.floor(n * 0.75));
+})();
+
+/** Stockfish hash table size in MB. Bigger = fewer re-evaluations on long searches. */
+const STOCKFISH_HASH_MB: number = ((): number => {
+  const override = process.env.STOCKFISH_HASH_MB;
+  if (override !== undefined && override !== "") {
+    const n = parseInt(override, 10);
+    if (!Number.isNaN(n) && n > 0) {
+      return n;
+    }
+  }
+  return 1024;
+})();
 
 /** Maximum concurrent analysis processes. Lc0 GPU contention limits this to 1. */
 const MAX_CONCURRENT_ANALYSES = ENGINE_TYPE === "lc0" ? 1 : 2;
@@ -263,8 +318,8 @@ export function spawnEngine(): EngineHandle {
       sendCmd(`setoption name WeightsFile value ${WEIGHTS_PATH}`);
       sendCmd(`setoption name Backend value ${ENGINE_BACKEND}`);
     } else {
-      sendCmd("setoption name Threads value 4");
-      sendCmd("setoption name Hash value 128");
+      sendCmd(`setoption name Threads value ${String(STOCKFISH_THREADS)}`);
+      sendCmd(`setoption name Hash value ${String(STOCKFISH_HASH_MB)}`);
     }
 
     sendCmd(`setoption name MultiPV value ${String(multipv)}`);
@@ -295,11 +350,15 @@ async function analyzeSinglePosition(
   multipv: number,
 ): Promise<AnalysisResult[]> {
   sf.sendCmd(`position fen ${fen}`);
-  const movetime = SEARCH_MOVETIME * Math.max(1, multipv);
+  // MultiPV doesn't cost N× — ranks 2+ piggyback on the rank-1 search tree.
+  // 1.5× empirically delivers ~depth-26 single-PV and ~depth-22 multi-PV on
+  // modern CPUs, which is plenty for blunder classification.
+  const multipvFactor = multipv > 1 ? MULTIPV_MOVETIME_FACTOR : 1;
+  const movetime = Math.round(SEARCH_MOVETIME * multipvFactor);
   sf.sendCmd(`go movetime ${String(movetime)}`);
   const results = await withTimeout(
     readUntilBestMove(sf.reader, multipv),
-    POSITION_TIMEOUT_MS * Math.max(1, multipv),
+    Math.max(POSITION_TIMEOUT_MS, movetime * 4),
     "Engine timed out analyzing position",
   );
 
@@ -346,48 +405,48 @@ export async function* analyzeGame(
   depth: number;
   total: number;
 }> {
-  // Cache check: only use full-game cache when single-PV is requested
-  if (multipv === 1) {
-    const existingCount = db
+  // Full-game cache check: if every position has the requested rank coverage
+  // at sufficient depth, yield from the DB and skip spawning the engine.
+  const cachedCount = db
+    .prepare(
+      `SELECT COUNT(*) as count FROM analysis
+        WHERE game_id = ? AND multipv_rank <= ? AND depth >= ?`,
+    )
+    .get(gameId, multipv, MIN_CACHE_DEPTH) as { count: number };
+
+  if (cachedCount.count >= fens.length * multipv) {
+    const rows = db
       .prepare(
-        `SELECT COUNT(*) as count FROM analysis
-          WHERE game_id = ? AND multipv_rank = 1 AND depth >= ?`,
+        `SELECT move_index, multipv_rank, fen, score_cp, score_mate, best_move, pv, depth
+           FROM analysis
+          WHERE game_id = ? AND multipv_rank <= ?
+          ORDER BY move_index, multipv_rank`,
       )
-      .get(gameId, MIN_CACHE_DEPTH) as { count: number };
+      .all(gameId, multipv) as Array<{
+      move_index: number;
+      multipv_rank: number;
+      fen: string;
+      score_cp: number | null;
+      score_mate: number | null;
+      best_move: string;
+      pv: string | null;
+      depth: number;
+    }>;
 
-    if (existingCount.count >= fens.length) {
-      const rows = db
-        .prepare(
-          `SELECT move_index, fen, score_cp, score_mate, best_move, pv, depth
-             FROM analysis
-            WHERE game_id = ? AND multipv_rank = 1
-            ORDER BY move_index`,
-        )
-        .all(gameId) as Array<{
-        move_index: number;
-        fen: string;
-        score_cp: number | null;
-        score_mate: number | null;
-        best_move: string;
-        pv: string | null;
-        depth: number;
-      }>;
-
-      for (const row of rows) {
-        yield {
-          moveIndex: row.move_index,
-          multipvRank: 1,
-          fen: row.fen,
-          scoreCp: row.score_cp,
-          scoreMate: row.score_mate,
-          bestMove: row.best_move,
-          pv: row.pv ?? row.best_move,
-          depth: row.depth,
-          total: fens.length,
-        };
-      }
-      return;
+    for (const row of rows) {
+      yield {
+        moveIndex: row.move_index,
+        multipvRank: row.multipv_rank,
+        fen: row.fen,
+        scoreCp: row.score_cp,
+        scoreMate: row.score_mate,
+        bestMove: row.best_move,
+        pv: row.pv ?? row.best_move,
+        depth: row.depth,
+        total: fens.length,
+      };
     }
+    return;
   }
 
   const sf = spawnEngine();
@@ -401,35 +460,39 @@ export async function* analyzeGame(
     `);
 
     for (let i = 0; i < fens.length; i++) {
-      // Per-position cache check (single-PV only)
-      if (multipv === 1) {
-        const existing = db
-          .prepare(
-            `SELECT score_cp, score_mate, best_move, pv, depth FROM analysis
-              WHERE game_id = ? AND move_index = ? AND multipv_rank = 1 AND depth >= ?`,
-          )
-          .get(gameId, i, MIN_CACHE_DEPTH) as {
-          score_cp: number | null;
-          score_mate: number | null;
-          best_move: string;
-          pv: string | null;
-          depth: number;
-        } | null;
+      // Per-position cache check — skip Stockfish if every requested rank is
+      // already cached at sufficient depth for this (game_id, move_index).
+      const cachedRows = db
+        .prepare(
+          `SELECT multipv_rank, score_cp, score_mate, best_move, pv, depth
+             FROM analysis
+            WHERE game_id = ? AND move_index = ? AND multipv_rank <= ? AND depth >= ?
+            ORDER BY multipv_rank`,
+        )
+        .all(gameId, i, multipv, MIN_CACHE_DEPTH) as Array<{
+        multipv_rank: number;
+        score_cp: number | null;
+        score_mate: number | null;
+        best_move: string;
+        pv: string | null;
+        depth: number;
+      }>;
 
-        if (existing !== null) {
+      if (cachedRows.length >= multipv) {
+        for (const row of cachedRows) {
           yield {
             moveIndex: i,
-            multipvRank: 1,
+            multipvRank: row.multipv_rank,
             fen: fens[i],
-            scoreCp: existing.score_cp,
-            scoreMate: existing.score_mate,
-            bestMove: existing.best_move,
-            pv: existing.pv ?? existing.best_move,
-            depth: existing.depth,
+            scoreCp: row.score_cp,
+            scoreMate: row.score_mate,
+            bestMove: row.best_move,
+            pv: row.pv ?? row.best_move,
+            depth: row.depth,
             total: fens.length,
           };
-          continue;
         }
+        continue;
       }
 
       const results = await analyzeSinglePosition(fens[i], sf, multipv);
