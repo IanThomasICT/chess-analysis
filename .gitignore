@@ -16,3 +16,6 @@ test_*.db-*
 # Lc0 weights
 *.pb.gz
 weights/
+
+# Subagent research scratch
+.firecrawl/
