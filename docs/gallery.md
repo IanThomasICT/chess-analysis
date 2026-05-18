@@ -62,25 +62,36 @@ File: `client/src/pages/Home.tsx`
 The page uses TanStack Query (`useQuery`) to fetch games via `fetchGames(username)` from `client/src/api.ts`. The server handler:
 1. Reads `?username=` from the URL query params
 2. Fetches the last 3 months from Chess.com
-3. Upserts all games into the `games` table (using `INSERT OR REPLACE`)
+3. Upserts all games into the `games` table (using `INSERT OR REPLACE`) — each row populated via the exported `buildGameRow(username, ChessComGame)` helper, which extracts WhiteElo / BlackElo / ECO / Opening from PGN headers (falling back to `classifyOpening(pgnToMoves(pgn))` when headers are absent)
 4. If the Chess.com fetch fails, falls through to load from the DB cache
 5. Returns all games for the username, sorted by `end_time DESC`
 
 The game ID is extracted from the Chess.com game URL: `g.url.split("/").pop()`.
 
-### Client Filters
+A second `useQuery` calls `fetchBulkMetrics(username)` against `/api/games/metrics` to prefetch accuracy + blunder counts for every game in one round-trip. The result is a `Record<gameId, GameMetrics | null>` and feeds the card chips below. Up to 20 cache misses are computed on the fly per call; beyond that, lazy per-card.
 
-The gallery supports three client-side filters (no server round-trip):
+### Username persistence
 
-| Filter | Type | Options |
+The username param is mirrored to `localStorage` under `USERNAME_STORAGE_KEY` ("chess-analyzer-username"). On a cold load with no `?username=`, the stored value is restored via `setSearchParams({ replace: true })`.
+
+### Client Filters + Sort
+
+The gallery supports three client-side filters and a sort mode (no server round-trip):
+
+| Control | Type | Options |
 |---|---|---|
 | Text search | Free text input | Matches against white/black usernames |
 | Time class | Select dropdown | All, Bullet, Blitz, Rapid, Daily |
 | Result | Select dropdown | All, Wins, Losses, Draws |
+| Sort | Three buttons | Recent (default), Worst first, Best first |
 
-Result filtering is relative to the queried username (e.g. "Wins" means games where that user won).
+Result filtering is relative to the queried username (e.g. "Wins" means games where that user won). Worst/Best-first sort by the user-side accuracy from `metricsMap`; games with no metrics sort to the end regardless of mode.
 
 A count badge shows the number of filtered results.
+
+### StatsPanel banner
+
+`<StatsPanel username={username} />` renders above the filter bar. It calls `/api/stats/:username/by-side` and shows a two-card "As White" / "As Black" breakdown (W-D-L, win rate, avg accuracy, blunders/game). The panel returns `null` when stats are still loading or both sides are empty, so the gallery layout doesn't flicker.
 
 ## GameCard Component
 
@@ -91,5 +102,7 @@ Each card is a `<Link>` to `/analysis/:gameId` and displays:
 - Time class with icon
 - White and black player names
 - Date (formatted as "Mon DD, YYYY")
+- Optional `accuracy` chip (green ≥90 / amber 70–89 / red <70) when bulk metrics are loaded
+- Optional `blunders` chip (red ≥3 / amber 1–2 / hidden at 0)
 
-The `ResultBadge` sub-component determines win/loss relative to the queried username.
+The accuracy + blunder values are the user's side (white if user played white, else black). The `ResultBadge` sub-component determines win/loss relative to the queried username.

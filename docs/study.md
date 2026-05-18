@@ -11,7 +11,7 @@
 
 ## Purpose
 
-Lowers cognitive overhead per session: Ian opens the app, sees `87% accuracy · 1.2 blunders/game · ACL 32` and knows what every number means. Serves **Review velocity** (one of the three core metrics in `docs/core.md`).
+Lowers cognitive overhead per session: Ian opens the app, sees `87% accuracy · 1.2 blunders/game · pin / hanging piece` and knows what every number and chip means. Serves **Review velocity** (one of the three core metrics in `docs/core.md`).
 
 ## Content shape
 

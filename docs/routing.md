@@ -9,21 +9,35 @@ The app uses **react-router v7 in library mode** (CSR, not framework mode). `mai
 | URL Pattern | Component | Purpose |
 |---|---|---|
 | `/` | `Home` | Game gallery (index route) |
-| `/analysis/:gameId` | `Analysis` | Analysis view |
+| `/analysis/:gameId` | `Analysis` | Analysis view (deep MultiPV=3 by default) |
+| `/stats` | `Stats` | Tabbed dashboards (`?username=…`) |
+| `/drill` | `Drill` | Spaced-repetition drill mode (`?username=…`) |
+| `/study` | `Study` | In-app glossary |
 
 There is no server-side rendering. The Vite SPA handles all routing client-side.
 
 ## API Routes (Server)
 
-File: `server/routes/games.ts`, `server/routes/analyze.ts`
-
-API routes are registered as Hono sub-routers mounted on `/api`:
+Files: `server/routes/{games,analyze,stats,positions,drill}.ts`. All routers mounted on `/api`.
 
 | Endpoint | Handler | Purpose |
 |---|---|---|
 | `GET /api/games?username=X` | `games.ts` | Fetch + cache games from Chess.com |
-| `GET /api/games/:gameId` | `games.ts` | Load single game with FENs, moves, analysis |
-| `GET /api/analyze/:gameId` | `analyze.ts` | SSE Stockfish analysis stream |
+| `GET /api/games/metrics?username=X` | `games.ts` | Bulk per-game metrics (registered **before** `/games/:gameId` to avoid Hono capturing the literal `metrics` as a `:gameId`) |
+| `GET /api/games/:gameId` | `games.ts` | Load single game with FENs, moves, analysis, motifs |
+| `GET /api/games/:gameId/metrics` | `games.ts` | Per-game accuracy / blunder metrics (lazy compute + cache) |
+| `GET /api/games/:gameId/alternatives/:moveIndex` | `games.ts` | Top-3 engine lines for a single position (MultiPV ranks) |
+| `GET /api/analyze/:gameId?multipv=` | `analyze.ts` | SSE Stockfish analysis stream; `multipv=3` is the default the UI sends |
+| `GET /api/positions/history?fen=&username=` | `positions.ts` | Position recurrence by `fen_key` (transposition-friendly) |
+| `GET /api/stats/:user/by-side` | `stats.ts` | White vs Black breakdown |
+| `GET /api/stats/:user/win-rate?slice=&from=&to=` | `stats.ts` | Win-rate slice (color / time_class / rating_bucket / opening) |
+| `GET /api/stats/:user/elo-trend?time_class=` | `stats.ts` | Elo time series |
+| `GET /api/stats/:user/accuracy-trend?time_class=` | `stats.ts` | Accuracy time series |
+| `GET /api/stats/:user/by-time-of-day` | `stats.ts` | 7×24 heatmap (uses `USER_TZ`) |
+| `GET /api/stats/:user/motifs?from=&to=` | `stats.ts` | Recurring motif counts (user-side only) |
+| `GET /api/stats/:user/drill-progress` | `stats.ts` | Total attempts, accuracy %, due-today, streak |
+| `GET /api/drill/queue?username=&limit=` | `drill.ts` | FSRS drill queue (due + new positions) |
+| `POST /api/drill/attempt` | `drill.ts` | Record an attempt; FSRS schedules next due |
 
 ## Data Loading
 

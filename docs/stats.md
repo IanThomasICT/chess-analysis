@@ -4,12 +4,13 @@
 
 | File | Purpose |
 |---|---|
-| `server/routes/stats.ts` | `/api/stats/:username/{by-side,win-rate,elo-trend,by-time-of-day}` |
+| `server/routes/stats.ts` | `/api/stats/:user/{by-side,win-rate,elo-trend,accuracy-trend,by-time-of-day,motifs,drill-progress}` |
 | `server/lib/openings.ts` | TSV loader + `classifyOpening(sanMoves)` longest-prefix match |
 | `server/lib/backfill.ts` | Hybrid opening backfill on startup |
 | `server/data/openings/{a..e}.tsv` | lichess-org/chess-openings (CC0, ~3700 lines) |
 | `client/src/pages/Stats.tsx` | Tabbed dashboard page (`/stats?username=…`) |
-| `client/src/components/EloTrendChart.tsx` | uPlot line chart |
+| `client/src/components/EloTrendChart.tsx` | uPlot line chart (rating series) |
+| `client/src/components/AccuracyTrendChart.tsx` | uPlot line chart (per-game accuracy series, green, Y pinned 0–100) |
 
 ## Endpoints
 
@@ -31,8 +32,17 @@ Returns `Array<{ key, games, wins, draws, losses, win_rate, avg_accuracy, openin
 ### `GET /api/stats/:username/elo-trend?time_class=blitz`
 Returns `EloTrendPoint[] = [{ t, elo }]` ordered ASC by `end_time`. Filters rows where `user_elo IS NULL`.
 
+### `GET /api/stats/:username/accuracy-trend?time_class=blitz`
+Returns `AccuracyTrendPoint[] = [{ t, accuracy }]` ordered ASC by `end_time`. Uses the user-side accuracy from `game_metrics` (white when `lower(games.white) = lower(username)`, else black). Inner-JOIN with `game_metrics` so games without computed metrics are excluded.
+
 ### `GET /api/stats/:username/by-time-of-day`
 Returns `TimeOfDayBucket[] = [{ hour, day, games, wins, win_rate }]`. Converts `end_time` to local timezone via `USER_TZ` env (default `America/Los_Angeles`); `USER_TZ` is read **lazily** on each call so tests can override.
+
+### `GET /api/stats/:username/motifs?from=&to=`
+Returns `Array<{ tag, count, example_game_id, example_move_index }>` ordered by count DESC. Filtered to **user-side** blunders only via mover-parity: white iff `(move_index - 1) % 2 = 0`. See [motifs.md](motifs.md).
+
+### `GET /api/stats/:username/drill-progress`
+Returns `{ total_attempts, accuracy_pct, due_today, current_streak }`. Streak is consecutive server-local days ending today with at least one correct drill attempt.
 
 ## Opening classification (DESIGN D7)
 
@@ -40,12 +50,15 @@ Hybrid: PGN `[ECO]` / `[Opening]` headers first, fall back to `classifyOpening(p
 
 ## UI
 
-`/stats?username=X` page has 6 tabs:
+`/stats?username=X` page has 9 tabs:
 
 - **By Side** — 2-column card grid showing W-D-L, win rate, accuracy, blunders/game.
 - **By Time Class / By Opening / By Rating** — HTML bar charts (CSS bars, no canvas).
-- **Elo Trend** — uPlot line chart with time-class selector.
+- **Elo Trend** — uPlot line chart with time-class selector (`EloTrendChart`).
+- **Accuracy Trend** — uPlot line chart with time-class selector (`AccuracyTrendChart`); Y pinned to `[0, 100]` for cross-time-class comparability.
 - **Time of Day** — 7×24 HTML table; cell opacity scales with game count, tooltip shows win rate.
+- **Motifs** — recurring-mistake list with example deep-links (`/analysis/:id?move=N`).
+- **Drill** — total attempts, accuracy, due-today, streak (drives the FSRS panel on `/drill`).
 
 Reached from Home via a "Stats →" link in the header (visible once a username is loaded).
 

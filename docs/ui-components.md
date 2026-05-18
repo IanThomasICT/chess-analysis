@@ -110,29 +110,31 @@ A scrollable grid of moves in standard notation, grouped into pairs (white move,
 
 ```ts
 interface MoveListProps {
-  moves: string[];              // SAN strings (stable reference via useMemo in parent)
-  currentMove: number;          // active position index
+  moves: string[];                          // SAN strings (stable reference via useMemo in parent)
+  currentMove: number;                      // active position index
   onSelectMove: (moveIndex: number) => void;
-  moveClasses: string[];        // precomputed CSS classes per move (blunder/mistake/inaccuracy)
+  classifications: MoveClass[];             // typed enum per move (best/good/inaccuracy/mistake/blunder)
+  motifs?: Record<string, string[]>;        // optional motif tags keyed by stringified move_index
 }
 ```
 
 ### Move Classification
 
-Classifications are **precomputed in the parent** (`Analysis.tsx`) via `useMemo` with a `Map<move_index, entry>` for O(1) lookups, then passed as a simple `string[]`. MoveList indexes into this array (`moveClasses[positionIndex] ?? ""`). No per-render computation.
+Classifications are **precomputed in the parent** (`Analysis.tsx`) via `useMemo` and passed as `MoveClass[]`. The component derives the rendered CSS at render-time via `classToColor(class)` from `client/src/lib/classify.ts`, which re-exports `shared/classify.ts`.
 
-The classification math lives in module-level helpers in `Analysis.tsx`: `evalCp(row)` converts each side's eval (mates → ±1000), and `classifySwing(swing)` maps the signed swing to a CSS class.
+Thresholds follow Lichess Win%-delta (see [docs/metrics.md](metrics.md) for the full formulas):
 
-The classification thresholds:
-
-| Eval Swing (centipawns) | Classification | CSS |
+| wpDelta (0–1 scale) | Classification | Rendered CSS |
 |---|---|---|
-| < -300 | Blunder | `text-red-500 font-bold` |
-| < -100 | Mistake | `text-orange-500 font-semibold` |
-| < -50 | Inaccuracy | `text-yellow-500` |
-| >= -50 | Normal | (no extra class) |
+| ≥ 0.30 | blunder | `text-red-500 font-bold` |
+| ≥ 0.20 | mistake | `text-orange-500 font-semibold` |
+| ≥ 0.10 | inaccuracy | `text-yellow-500` |
+| ≤ 0.02 | best | (none) |
+| else | good | (none) |
 
-The swing direction is relative to the side that moved. A negative swing means the position got worse for the player who just moved.
+### Motif chips
+
+When `motifs[moveIndex]` is populated, a small purple chip renders next to the move showing first-letter abbreviations (F=fork, P=pin, S=skewer, H=hanging piece, M=missed mate, B=back-rank mate). The chip carries a `title` attribute with the full motif names (underscores → spaces) so hovering reveals the meaning.
 
 ### Auto-Scroll
 
@@ -146,4 +148,34 @@ Moves are displayed in a 3-column grid: `[move number] [white move] [black move]
 
 File: `client/src/components/GameCard.tsx`
 
-See [gallery.md](gallery.md) for details.
+See [gallery.md](gallery.md) for details — including the optional `accuracy?` / `blunders?` chips that render when metrics are available.
+
+## StatsPanel
+
+File: `client/src/components/StatsPanel.tsx`
+
+Compact horizontal panel slotted above the gallery filter bar on Home. Fetches `/api/stats/:username/by-side` via TanStack Query and renders two side-by-side blocks: "As White" and "As Black", each showing W-D-L, win rate, avg accuracy, and blunders/game. Returns `null` while loading, on error, or when both sides have zero games (no flicker). The "As Black" block is separated by a thin vertical divider.
+
+## RecurrencePanel
+
+File: `client/src/components/RecurrencePanel.tsx`
+
+Position-recurrence widget on the Analysis page. Fetches `/api/positions/history?fen=…&username=…` and lists other games (excluding the current one) where the same position appeared — matched on `fen_key` (first 4 FEN fields, transposition-friendly). Each row shows a red dot if the user blundered at that move, the opponent's name, the played move, and the game date as a `<Link>` deep-link `/analysis/:id?move=N`. Silent on empty/loading so navigation between moves doesn't flash. Hidden until at least one prior game matches.
+
+## AlternativesPanel
+
+File: `client/src/components/AlternativesPanel.tsx`
+
+Top-3 engine lines for the current position, fetched from `/api/games/:gameId/alternatives/:moveIndex`. Each row: rank, eval (formatted `+1.23` or `+M3`), full PV in UCI (truncated with tooltip), depth. Always rendered on the Analysis page because deep analysis (MultiPV=3) is the default. Includes the actually-played move at the bottom for comparison.
+
+## EloTrendChart
+
+File: `client/src/components/EloTrendChart.tsx`
+
+Imperative-canvas uPlot wrapper used by `/stats > Elo Trend`. Single blue series, time-scaled X axis, "Rating" Y label. Same deferred-init-via-ResizeObserver pattern as `EvalGraph` to avoid 0×0 canvas problems. A second `useEffect` on `[data]` re-feeds the series when the user toggles time class.
+
+## AccuracyTrendChart
+
+File: `client/src/components/AccuracyTrendChart.tsx`
+
+Mirror of `EloTrendChart` for `/stats > Accuracy Trend`. Green stroke (`#22c55e`), Y axis pinned to `[0, 100]` so accuracy values across time classes stay visually comparable, "Accuracy %" axis label. Data comes from `fetchAccuracyTrend(username, timeClass)` which hits `/api/stats/:username/accuracy-trend`.

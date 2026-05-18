@@ -59,3 +59,5 @@ The cache is invalidated by deleting the row when an analyze SSE stream opens fo
 | `GET /api/games/:id/metrics` | `{ gameId, white: PerSideMetrics, black: PerSideMetrics, computedAt }` (404 if unanalyzed) |
 | `GET /api/games/metrics?username=X` | `Record<gameId, GameMetrics \| null>` for the user's games |
 | `GET /api/stats/:username/by-side` | `{ white: SideStats, black: SideStats }` (wins, draws, losses, win_rate, avg_accuracy, blunders_per_game) |
+
+> **Note**: `GET /api/games/metrics` is registered **before** `GET /api/games/:gameId` in `server/routes/games.ts`. Hono matches routes in declaration order; without the hoist, the literal string `"metrics"` gets captured as a `:gameId` and the route returns 404.

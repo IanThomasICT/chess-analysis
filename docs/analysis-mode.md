@@ -17,7 +17,7 @@ The Analysis page **runs deep analysis by default** for any newly-opened game (t
 - The `AlternativesPanel` shows the PVs with their evals, depth, and the move actually played.
 - A separate endpoint `GET /api/games/:gameId/alternatives/:moveIndex` returns the three ranks for a single position (used by `AlternativesPanel`).
 
-Single-PV analysis remains the default — most users will never trigger deep mode.
+Single-PV is still wired (`?multipv=1` on the SSE URL) for callers that don't need alternatives, but the UI does not use it.
 
 ## Stockfish Service
 

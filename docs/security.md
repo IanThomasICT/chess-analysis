@@ -8,9 +8,14 @@ Middleware is applied in this order:
 
 1. **Security headers** (`hono/secure-headers`) — adds `X-Content-Type-Options`, `X-Frame-Options`, `Strict-Transport-Security`, etc. to all responses.
 2. **CORS** (`hono/cors`) — only enabled in development (Vite on `:5173` → Hono on `:3001`). In production the SPA is served same-origin, so CORS headers are unnecessary.
-3. **Rate limiting** (`server/lib/rate-limit.ts`) — in-memory per-IP limits:
-   - All `/api/*` routes: 60 requests/minute
-   - `/api/analyze/*`: 5 requests/minute (CPU-intensive Stockfish spawning)
+3. **Rate limiting** (`server/lib/rate-limit.ts`) — in-memory per-IP limits, tiered by environment:
+
+   | Bucket | Production (`NODE_ENV=production`) | Non-production |
+   |---|---|---|
+   | `/api/*` general | 60 req/min | 1000 req/min |
+   | `/api/analyze/*` | 5 req/min | 60 req/min |
+
+   The non-production bump exists because the limiter sees all local requests under a single `"unknown"` IP bucket when no `x-forwarded-for` / `x-real-ip` header is set — without raising the cap, a Playwright e2e suite that fans out 100+ requests per minute would get 429s. Production is unchanged from the original design.
 
 A **global error handler** (`app.onError`) catches unhandled exceptions and returns a generic `{ error: "Internal server error" }` without leaking stack traces or file paths.
 

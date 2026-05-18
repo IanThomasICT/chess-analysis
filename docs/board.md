@@ -4,7 +4,7 @@
 
 File: `client/src/components/ChessBoard.tsx`
 
-The board is rendered by `@lichess-org/chessground` v10 (the scoped package, not the old `chessground` package). It is a view-only board with no move interaction.
+The board is rendered by `@lichess-org/chessground` v10 (the scoped package, not the old `chessground` package). It is wrapped in `React.memo`. The default mode is view-only; opt-in `interactive` mode enables drag-drop with legal-move enforcement (used by `/drill`).
 
 ### Component API
 
@@ -15,6 +15,8 @@ interface ChessBoardProps {
   lastMove?: [Key, Key];              // [from, to] squares to highlight
   autoShapes?: DrawShape[];           // Arrows/circles drawn on the board (e.g. best move arrow)
   config?: Partial<Config>;           // Additional chessground config overrides
+  interactive?: boolean;              // Enable drag-drop with legal-move enforcement (default false)
+  onMove?: (orig: string, dest: string, promotion?: string) => void; // Fires after a legal drag-drop in interactive mode
 }
 ```
 
@@ -32,7 +34,11 @@ Position updates pass `animation: { enabled: false }` to `api.set()` for instant
 
 The parent passes arrow/circle overlays via `autoShapes`. `Analysis.tsx` uses this to draw a blue arrow showing Stockfish's recommended best move from the current position. The UCI best-move string (e.g. `"e2e4"`) is split into `orig`/`dest` squares in a `bestMoveShapes` memo (keyed on `[bestMoves, currentMove]`) and rendered as a `DrawShape` with the built-in `"blue"` brush. The arrow updates reactively as the user navigates.
 
-Configuration locks down all interaction:
+### Interactive mode (`interactive={true}`)
+
+When `interactive` is true the board enables `draggable`, computes `movable.dests` from `chess.js` `chess.moves({verbose:true})` (memoized on `[fen, interactive]`), sets `movable.color` to the side-to-move derived from the FEN, and fires `onMove(orig, dest, promotion?)` after a legal drop. A small `isPromotion(fen, orig, dest)` helper detects pawn promotions and defaults the promotion piece to queen — callers can intercept for a picker. The `"a0"` chessground sentinel key is filtered out before the chess.js cast.
+
+The non-interactive default still locks down all interaction:
 
 - `movable.free: false` -- pieces cannot be moved
 - `draggable.enabled: false` -- no drag-and-drop
@@ -85,9 +91,13 @@ interface MoveInfo {
 }
 ```
 
+### `pgnHeaders(pgn: string): PgnHeaders`
+
+Parses all `[Key "Value"]` PGN headers into a `PgnHeaders` record (`Partial<Record<string, string>>`). Used everywhere headers are needed — Elo backfill, ECO/Opening extraction, result lookup.
+
 ### `getGameResult(pgn: string): string | null`
 
-Extracts the `[Result "..."]` header from raw PGN text via regex.
+Returns the `Result` header. Delegates to `pgnHeaders(pgn).Result ?? null`.
 
 ## Move Indexing Convention
 
