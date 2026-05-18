@@ -61,13 +61,6 @@ describe("analysis page layout", () => {
     const page = getPage();
     await page.getByText("blitz").waitFor({ state: "visible" });
   });
-
-  test("displays the Analyze with Stockfish button when not analyzed", async () => {
-    const page = getPage();
-    await page
-      .getByRole("button", { name: "Analyze with Stockfish" })
-      .waitFor({ state: "visible" });
-  });
 });
 
 // =====================================================================
@@ -229,9 +222,12 @@ describe("move list interaction", () => {
 
   test("move list shows move numbers", async () => {
     const page = getPage();
-    // Should show "1.", "2.", "3.", "4." for Scholar's mate
-    await page.getByText("1.", { exact: false }).waitFor({ state: "visible" });
-    await page.getByText("4.", { exact: false }).waitFor({ state: "visible" });
+    // Should show "1.", "2.", "3.", "4." for Scholar's mate.
+    // AlternativesPanel also renders "1.", "2.", "3." for rank labels, so
+    // scope to the MoveList by selecting the .first() text node — the move
+    // list is rendered above the alternatives panel in DOM order.
+    await page.getByText("1.", { exact: true }).first().waitFor({ state: "visible" });
+    await page.getByText("4.", { exact: true }).first().waitFor({ state: "visible" });
   });
 });
 

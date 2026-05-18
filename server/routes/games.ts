@@ -112,6 +112,19 @@ export function buildGameRow(
 
 const games = new Hono();
 
+// Bulk metrics — MUST be registered before /games/:gameId, otherwise Hono
+// captures "metrics" as a gameId.
+games.get("/games/metrics", (c) => {
+  const username = c.req.query("username");
+  if (username === undefined || username === "") {
+    return c.json({ error: "username required" }, 400);
+  }
+  if (!USERNAME_PATTERN.test(username)) {
+    return c.json({ error: "Invalid username format" }, 400);
+  }
+  return c.json(fetchBulkMetricsFor(db, username));
+});
+
 games.get("/games", async (c) => {
   const username = c.req.query("username");
   if (username === undefined || username === "") {
@@ -429,18 +442,6 @@ export function fetchBulkMetricsFor(
 
   return result;
 }
-
-games.get("/games/metrics", (c) => {
-  const username = c.req.query("username");
-  if (username === undefined || username === "") {
-    return c.json({ error: "username required" }, 400);
-  }
-  if (!USERNAME_PATTERN.test(username)) {
-    return c.json({ error: "Invalid username format" }, 400);
-  }
-
-  return c.json(fetchBulkMetricsFor(db, username));
-});
 
 games.get("/games/:gameId/metrics", (c) => {
   const gameId = c.req.param("gameId");

@@ -36,9 +36,13 @@ if (process.env.NODE_ENV !== "production") {
   app.use("/api/*", cors({ origin: "http://localhost:5173" }));
 }
 
-// Rate limiting — general API limit + stricter limit for CPU-intensive analysis
-app.use("/api/*", rateLimit({ windowMs: 60_000, max: 60 }));
-app.use("/api/analyze/*", rateLimit({ windowMs: 60_000, max: 5 }));
+// Rate limiting — general API limit + stricter limit for CPU-intensive analysis.
+// In development the limiter sees all local requests under the same "unknown"
+// IP bucket because no x-forwarded-for header is set; the lower limits below
+// would throttle Playwright e2e runs that fan out 100+ requests per minute.
+const isProd = process.env.NODE_ENV === "production";
+app.use("/api/*", rateLimit({ windowMs: 60_000, max: isProd ? 60 : 1000 }));
+app.use("/api/analyze/*", rateLimit({ windowMs: 60_000, max: isProd ? 5 : 60 }));
 
 app.route("/api", games);
 app.route("/api", analyze);

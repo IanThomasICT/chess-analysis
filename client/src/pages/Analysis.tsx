@@ -53,6 +53,7 @@ interface AnalysisEvent {
   done?: boolean;
   error?: string;
   moveIndex: number;
+  multipvRank?: number;
   fen: string;
   moveSan?: string;
   scoreCp: number | null;
@@ -85,8 +86,10 @@ export function Analysis() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [progress, setProgress] = useState(0);
   const [userFlipped, setUserFlipped] = useState(false);
-  const [deepEnabled, setDeepEnabled] = useState(false);
-  const [deepProgress, setDeepProgress] = useState(0);
+  // Deep analysis (MultiPV=3) runs by default — top-3 arrows + AlternativesPanel
+  // are visible from the moment a new game is opened, and the engine persists
+  // rank 2/3 to the analysis table for later reuse.
+  const [deepEnabled] = useState(true);
 
   // Seed analysis state from query data when it loads. SSE results extend this
   // array in-place, so we need state — pure derivation is not enough.
@@ -214,7 +217,10 @@ export function Analysis() {
     setProgress(0);
 
     const results: AnalysisRow[] = [];
-    const eventSource = new EventSource(`/api/analyze/${game.id}`);
+    // MultiPV=3 by default — engine emits 3 events per position (rank 1/2/3).
+    // Only rank 1 feeds the analysis state (eval graph, move list, recurrence).
+    // Ranks 2/3 are persisted server-side; AlternativesPanel fetches them lazily.
+    const eventSource = new EventSource(`/api/analyze/${game.id}?multipv=3`);
 
     eventSource.onmessage = (event: MessageEvent<string>) => {
       const eventData = JSON.parse(event.data) as AnalysisEvent;
@@ -223,6 +229,7 @@ export function Analysis() {
         eventSource.close();
         setIsAnalyzing(false);
         void queryClient.invalidateQueries({ queryKey: ["metrics", game.id] });
+        void queryClient.invalidateQueries({ queryKey: ["alternatives", game.id] });
         return;
       }
 
@@ -230,6 +237,12 @@ export function Analysis() {
         eventSource.close();
         setIsAnalyzing(false);
         console.error("Analysis error:", eventData.error);
+        return;
+      }
+
+      // Skip non-rank-1 events for analysis-state updates.
+      const rank = eventData.multipvRank ?? 1;
+      if (rank !== 1) {
         return;
       }
 
@@ -260,45 +273,6 @@ export function Analysis() {
       eventSource.close();
     };
   }, [game, analyzed, queryClient]);
-
-  // Open a separate EventSource for MultiPV=3 deep analysis when deepEnabled flips true.
-  useEffect(() => {
-    if (!deepEnabled || game === undefined) {
-      return;
-    }
-    const eventSource = new EventSource(`/api/analyze/${game.id}?multipv=3`);
-    eventSource.onmessage = (event: MessageEvent<string>) => {
-      const eventData = JSON.parse(event.data) as {
-        done?: boolean;
-        error?: string;
-        moveIndex?: number;
-        total?: number;
-      };
-      if (eventData.done === true) {
-        eventSource.close();
-        setDeepProgress(100);
-        void queryClient.invalidateQueries({ queryKey: ["alternatives", game.id] });
-        return;
-      }
-      if (eventData.error !== undefined) {
-        eventSource.close();
-        return;
-      }
-      if (
-        eventData.moveIndex !== undefined &&
-        eventData.total !== undefined &&
-        eventData.total > 0
-      ) {
-        setDeepProgress(((eventData.moveIndex + 1) / eventData.total) * 100);
-      }
-    };
-    eventSource.onerror = () => {
-      eventSource.close();
-    };
-    return () => {
-      eventSource.close();
-    };
-  }, [deepEnabled, game, queryClient]);
 
   // Fetch top-3 alternatives for the current position when deep analysis is enabled.
   const { data: alts } = useQuery({
@@ -513,14 +487,6 @@ export function Analysis() {
               </div>
             )}
           </div>
-          <button
-            type="button"
-            onClick={() => { setDeepEnabled(true); }}
-            disabled={deepEnabled}
-            className="px-3 py-1 text-sm rounded bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200 disabled:opacity-50"
-          >
-            {deepEnabled ? `Deep ${String(Math.round(deepProgress))}%` : "Deep analysis"}
-          </button>
           {isAnalyzing && (
             <div className="flex items-center gap-2">
               <div className="w-32 h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">

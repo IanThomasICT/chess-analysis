@@ -12,7 +12,7 @@ The analysis system has three layers:
 
 The analyze SSE endpoint accepts `?multipv=3`. The engine is re-initialised with `MultiPV=3`, search time scales proportionally (`SEARCH_MOVETIME * 3`), and each position yields **three** SSE events (one per `multipvRank`, ordered 1..3 with rank 1 being the best line). All three are persisted to `analysis` with the composite PK `(game_id, move_index, multipv_rank)`.
 
-The UI exposes a "Deep analysis" toggle in the Analysis header. Once enabled:
+The Analysis page **runs deep analysis by default** for any newly-opened game (the auto-start `EventSource` URL is `/api/analyze/:id?multipv=3`). Rank-1 events feed the eval graph / move list / metrics state; rank-2/3 events are persisted server-side and fetched lazily by `AlternativesPanel` per position.
 - Top-3 engine lines render as graduated arrows on the board (blue / paleBlue / green).
 - The `AlternativesPanel` shows the PVs with their evals, depth, and the move actually played.
 - A separate endpoint `GET /api/games/:gameId/alternatives/:moveIndex` returns the three ranks for a single position (used by `AlternativesPanel`).
@@ -36,7 +36,7 @@ interface EngineHandle {
 }
 ```
 
-`init(multipv)` sends `setoption name MultiPV value <n>` after the standard UCI handshake. `MultiPV=1` is the default (cheap, fast, ground-truth single-line analysis). `MultiPV=3` is requested opt-in via the SSE query `?multipv=3` — see "Deep analysis" below.
+`init(multipv)` sends `setoption name MultiPV value <n>` after the standard UCI handshake. `MultiPV=3` is the default the Analysis page requests via `?multipv=3`; the SSE endpoint also accepts `?multipv=1` for callers that only need single-line analysis. See "Deep analysis" below.
 
 - **stdin**: Bun's `FileSink`. Commands are written with `stdin.write()` + `stdin.flush()`.
 - **stdout**: `ReadableStream<Uint8Array>`. A reader is obtained via `.getReader()`.

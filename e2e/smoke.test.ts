@@ -30,13 +30,35 @@ describe("real data smoke tests", () => {
     expect(count).toBeGreaterThan(0);
   });
 
-  test("loads analysis page for game 164920702934", async () => {
+  test("loads analysis page from first kidkasu game card", async () => {
     const page = getPage();
-    await page.goto(`${baseUrl  }/analysis/164920702934`);
-    // Wait for board and player names to render
+    // Load games first
+    await page.goto(`${baseUrl}/?username=kidkasu`);
+    const firstCard = page.locator('a[href^="/analysis/"]').first();
+    await firstCard.waitFor({ state: "visible", timeout: 30_000 });
+    const href = await firstCard.getAttribute("href");
+    expect(href).toMatch(/^\/analysis\/.+/);
+
+    // Navigate to that game
+    await page.goto(`${baseUrl}${href ?? ""}`);
     await page.locator("cg-board").waitFor({ state: "visible", timeout: 15_000 });
-    // Verify navigation controls are present
     const moveCounter = page.getByText(/\d+ \/ \d+/);
     await moveCounter.waitFor({ state: "visible" });
+  });
+
+  test("Study page is reachable from Home", async () => {
+    const page = getPage();
+    await page.goto(`${baseUrl}/`);
+    await page.getByRole("link", { name: /Study/ }).click();
+    await page.getByRole("heading", { name: "Study", exact: true }).waitFor({ state: "visible" });
+    // Glossary entries render
+    await page.getByText("Accuracy", { exact: true }).first().waitFor({ state: "visible" });
+  });
+
+  test("Stats page loads for kidkasu", async () => {
+    const page = getPage();
+    await page.goto(`${baseUrl}/stats?username=kidkasu`);
+    await page.getByRole("button", { name: "By Side" }).waitFor({ state: "visible" });
+    await page.getByRole("button", { name: "Accuracy Trend" }).waitFor({ state: "visible" });
   });
 });
