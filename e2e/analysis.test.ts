@@ -211,7 +211,7 @@ describe("move list interaction", () => {
     // The active button should have a blue background class
     const btn = page.getByRole("button", { name: "e4" });
     const className = await btn.getAttribute("class");
-    expect(className).toContain("bg-blue");
+    expect(className).toContain("bg-accent");
   });
 
   test("clicking last move shows final position", async () => {
@@ -291,6 +291,29 @@ describe("eval bar", () => {
     const page = getPage();
     const evalBarContainer = page.locator(".w-8").first();
     await evalBarContainer.waitFor({ state: "visible" });
+  });
+});
+
+// =====================================================================
+// Tabbed rail (redesign) — Moves / Report / Engine / History
+// =====================================================================
+
+describe("rail tabs", () => {
+  const { getPage } = usePage("/analysis/e2e_game_1");
+
+  test("switching tabs swaps the rail body", async () => {
+    const page = getPage();
+    // Moves is the default tab → SAN move buttons are present.
+    await page.getByRole("button", { name: "e4" }).first().waitFor({ state: "visible" });
+
+    // Report tab unmounts the move list and shows the metrics card.
+    await page.getByRole("button", { name: "Report" }).click();
+    await page.getByText("Phase Accuracy").waitFor({ state: "visible" });
+    expect(await page.getByRole("button", { name: "e4" }).count()).toBe(0);
+
+    // Back to Moves restores the move list.
+    await page.getByRole("button", { name: "Moves" }).click();
+    await page.getByRole("button", { name: "e4" }).first().waitFor({ state: "visible" });
   });
 });
 

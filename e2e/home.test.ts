@@ -16,8 +16,8 @@ afterAll(() => {
 // Helper: reset all client-side filters to default state.
 async function resetFilters(page: Page) {
   await page.getByPlaceholder("Search by opponent...").clear();
-  await page.locator("select").first().selectOption("all");
-  await page.locator("select").nth(1).selectOption("all");
+  await page.getByRole("group", { name: "Time class" }).getByRole("button", { name: "All" }).click();
+  await page.getByRole("group", { name: "Result" }).getByRole("button", { name: "All" }).click();
   // Wait for all 3 cards to be visible after clearing filters
   await page.locator('a[href^="/analysis/"]').first().waitFor({ state: "visible" });
 }
@@ -32,14 +32,15 @@ describe("home page", () => {
 
   test("shows the app title", async () => {
     const page = getPage();
-    await page.locator("h1").waitFor({ state: "visible" });
-    expect(await page.locator("h1").textContent()).toBe("Chess Analyzer");
+    const brand = page.getByRole("link", { name: /Chess Analyzer/ }).first();
+    await brand.waitFor({ state: "visible" });
+    expect(await brand.textContent()).toContain("Chess Analyzer");
   });
 
-  test("shows the username input and Load Games button", async () => {
+  test("shows the username input and Load button", async () => {
     const page = getPage();
     await page.locator('input[name="username"]').waitFor({ state: "visible" });
-    await page.getByRole("button", { name: "Load Games" }).waitFor({ state: "visible" });
+    await page.getByRole("button", { name: "Load" }).waitFor({ state: "visible" });
   });
 
   test("shows welcome message when no username entered", async () => {
@@ -78,7 +79,9 @@ describe("game gallery (seeded data)", () => {
 
   test("shows game count badge", async () => {
     const page = getPage();
-    await page.getByText("3 games").waitFor({ state: "visible" });
+    // The KPI band also renders a "N games" stat, so scope to the gallery
+    // badge (the <span> beside the filter row) to avoid a strict-mode clash.
+    await page.locator("span", { hasText: /^3 games$/ }).waitFor({ state: "visible" });
   });
 });
 
@@ -129,48 +132,45 @@ describe("client-side filters", () => {
 
   test("time class filter works", async () => {
     const page = getPage();
-    const select = page.locator("select").first();
-    await select.selectOption("blitz");
+    const tc = page.getByRole("group", { name: "Time class" });
+    await tc.getByRole("button", { name: "Blitz" }).click();
     expect(await page.locator('a[href^="/analysis/"]').count()).toBe(1);
-    await select.selectOption("bullet");
+    await tc.getByRole("button", { name: "Bullet" }).click();
     expect(await page.locator('a[href^="/analysis/"]').count()).toBe(1);
-    await select.selectOption("rapid");
+    await tc.getByRole("button", { name: "Rapid" }).click();
     expect(await page.locator('a[href^="/analysis/"]').count()).toBe(1);
-    await select.selectOption("all");
+    await tc.getByRole("button", { name: "All" }).click();
     expect(await page.locator('a[href^="/analysis/"]').count()).toBe(3);
   });
 
   test("result filter shows only wins", async () => {
     const page = getPage();
-    const resultSelect = page.locator("select").nth(1);
-    await resultSelect.selectOption("win");
+    await page.getByRole("group", { name: "Result" }).getByRole("button", { name: "Wins" }).click();
     expect(await page.locator('a[href^="/analysis/"]').count()).toBe(2);
   });
 
   test("result filter shows only draws", async () => {
     const page = getPage();
-    const resultSelect = page.locator("select").nth(1);
-    await resultSelect.selectOption("draw");
+    await page.getByRole("group", { name: "Result" }).getByRole("button", { name: "Draws" }).click();
     expect(await page.locator('a[href^="/analysis/"]').count()).toBe(1);
   });
 
   test("count badge updates with filter", async () => {
     const page = getPage();
-    await page.getByText("3 games").waitFor({ state: "visible" });
+    // Scope to the gallery badge <span> (KPI band has its own "N games").
+    await page.locator("span", { hasText: /^3 games$/ }).waitFor({ state: "visible" });
     const searchInput = page.getByPlaceholder("Search by opponent...");
     await searchInput.fill("opponent1");
-    await page.getByText("1 game").waitFor({ state: "visible" });
+    await page.locator("span", { hasText: /^1 game$/ }).waitFor({ state: "visible" });
   });
 
   test("combining filters (AND logic)", async () => {
     const page = getPage();
-    const resultSelect = page.locator("select").nth(1);
-    await resultSelect.selectOption("win");
+    await page.getByRole("group", { name: "Result" }).getByRole("button", { name: "Wins" }).click();
     // 2 wins
     expect(await page.locator('a[href^="/analysis/"]').count()).toBe(2);
 
-    const timeSelect = page.locator("select").first();
-    await timeSelect.selectOption("blitz");
+    await page.getByRole("group", { name: "Time class" }).getByRole("button", { name: "Blitz" }).click();
     // 1 blitz win
     expect(await page.locator('a[href^="/analysis/"]').count()).toBe(1);
   });
