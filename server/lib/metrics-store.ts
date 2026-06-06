@@ -201,6 +201,33 @@ export function autoFeedDrill(
 }
 
 /**
+ * Cheap resume pre-check: is a game's cached `game_metrics_ext` already current,
+ * without building the timeline/fold? Recomputes only the analysis signature from a
+ * single aggregate query over the rank-1 rows (the same inputs `deriveMetrics` uses:
+ * `MIN(depth)` and the row count) and compares it + `metrics_version` against the
+ * stored row. Lets the batch runner skip the full L1→L2 derivation for games left
+ * fresh by an earlier run. Returns false when no metrics exist or fewer than 2
+ * positions are analyzed (nothing derivable yet).
+ */
+export function metricsAreFresh(database: Database, gameId: string): boolean {
+  const existing = database
+    .prepare("SELECT metrics_version, analysis_sig FROM game_metrics_ext WHERE game_id = ?")
+    .get(gameId) as { metrics_version: number; analysis_sig: string } | null;
+  if (existing === null) {return false;}
+
+  const agg = database
+    .prepare(
+      `SELECT COUNT(*) AS count, MIN(depth) AS min_depth
+         FROM analysis WHERE game_id = ? AND multipv_rank = 1`,
+    )
+    .get(gameId) as { count: number; min_depth: number | null };
+  if (agg.count < 2 || agg.min_depth === null) {return false;}
+
+  const sig = computeAnalysisSig(agg.min_depth, agg.count);
+  return !isMetricsStale(existing, sig);
+}
+
+/**
  * Full ongoing-capture path: derive, skip if the cache is current, else upsert +
  * feed the drill queue. Returns the derived metrics (even when skipped) or null.
  */

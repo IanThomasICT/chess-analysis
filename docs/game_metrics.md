@@ -540,6 +540,14 @@ Cross-game aggregates (derived at read time, not stored — D7):
     rename is rare; an alias map / canonical player-id keying is deferred until a
     real rename happens.
 
+34. **The bulk backfill is operationally robust** (R8 amplified). As the tool's only
+    multi-hour job, it validates the engine before starting (fail fast, not on game 1),
+    isolates per-game failure (one bad game is logged and skipped, never aborts the
+    run), resumes cheaply (re-running after a partial run does work only for what's not
+    already fresh — engine, fold, or both), reports progress and a final tally, and
+    stops gracefully on interrupt. Rationale: an idempotent backfill is only useful if a
+    transient failure or a Ctrl-C is recoverable without redoing finished work.
+
 ---
 
 ## Architecture: raw → derived (drift control)
@@ -588,7 +596,7 @@ Drift is controlled by three rules:
 | `server/lib/ply-timeline.ts` *(new)* | Layer 1 — pure `buildTimeline(pgn, analysisRows) → EnrichedPly[]` shared by batch + Analysis page (D16). |
 | `server/lib/metrics-config.ts` *(new)* | Single home for all D8–D15 thresholds + `METRICS_VERSION` (D18). Adds, with shipping defaults: mate-win% decay `ε = 0.01` (D27), decided mate-hold `K = 3` plies (D28), out-of-book relative-frequency floor `X = 5%`, peer band `1100–2200`, build depth `24` plies (D29). All retunable; threshold bumps bump `METRICS_VERSION`. |
 | `server/lib/game-metrics.ts` *(new)* | Layer 2 — pure `buildGameMetrics(timeline, gameRow) → GameMetrics` (folds over the timeline). |
-| `server/scripts/build-metrics.ts` *(new)* | CLI batch runner (iterate user games, ensure analysis, build + upsert metrics rows). |
+| `server/scripts/build-metrics.ts` *(new)* | CLI batch runner (iterate user games, ensure analysis, build + upsert metrics rows). Operationally robust per D34 (preflight, per-game isolation, resume fast-path, progress, graceful interrupt). |
 | `client/src/pages/Analysis.tsx` | Existing client-only `missedConversions` — align to D2. |
 | `client/src/components/EloTrendChart.tsx`, `server/routes/stats.ts` (`elo-trend`) | Existing Elo trend chart + endpoint — extend for the motivating plot (running peak, net-gain, streaks) using `elo_delta` (R12, D5). |
 | `lichess-org/scalachess` `Divider.scala` | Reference implementation for D0 phase division + mixedness. |
@@ -726,9 +734,10 @@ over `games` — D5), and the read-time classifications above.
     newer than the game's latest analysis (R8).
   - Ensure deep analysis via `analyzeGame(..., { multipv: 3 })` honoring
     `acquire/releaseAnalysisSlot` (R1, R11, D1).
-  - Build metrics (timeline → folds), upsert `game_metrics_ext` (`INSERT OR REPLACE`),
-    log progress (`done/total`, skipped, elapsed).
+  - Build metrics (timeline → folds), upsert `game_metrics_ext` (`INSERT OR REPLACE`).
   - Skip rule uses `metrics_version` + `analysis_sig` (D17), not just existence.
+  - Operationally robust per D34: engine preflight, per-game error isolation, resume
+    fast-path (skip already-fresh work), progress + summary, graceful interrupt.
   - Resumable: one game per transaction; SIGINT-safe (R8).
   - *(No Elo second pass — `elo_delta` is a read-time window, D5.)*
 - Add a `package.json` script alias (e.g. `bun run metrics`).

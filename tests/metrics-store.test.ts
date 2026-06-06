@@ -5,6 +5,7 @@ import {
   computeAndStoreMetrics,
   computeAnalysisSig,
   isMetricsStale,
+  metricsAreFresh,
 } from "../server/lib/metrics-store";
 import { loadOpenings } from "../server/lib/openings";
 
@@ -98,5 +99,35 @@ describe("computeAndStoreMetrics", () => {
        VALUES ('empty', 'alice', '1. e4 e5 1-0', 'alice', 'bob', '1-0', 'blitz', 1, 1)`,
     ).run();
     expect(computeAndStoreMetrics(db, "empty")).toBeNull();
+  });
+});
+
+describe("metricsAreFresh (resume fast-path)", () => {
+  it("false before metrics are built, true after, without rebuilding", () => {
+    seedGame(db);
+    // No ext row yet → not fresh, must compute.
+    expect(metricsAreFresh(db, "g1")).toBe(false);
+
+    computeAndStoreMetrics(db, "g1");
+    // Now the cache exists and the cheap sig check agrees it's current.
+    expect(metricsAreFresh(db, "g1")).toBe(true);
+  });
+
+  it("goes stale when the underlying analysis changes (sig mismatch)", () => {
+    seedGame(db);
+    computeAndStoreMetrics(db, "g1");
+    expect(metricsAreFresh(db, "g1")).toBe(true);
+
+    // Deepen an analyzed position → MIN(depth) drops → analysis_sig changes.
+    db.prepare("UPDATE analysis SET depth = 8 WHERE game_id = 'g1' AND move_index = 0 AND multipv_rank = 1").run();
+    expect(metricsAreFresh(db, "g1")).toBe(false);
+  });
+
+  it("false for an unanalyzed game", () => {
+    db.prepare(
+      `INSERT INTO games (id, username, pgn, white, black, result, time_class, end_time, is_standard)
+       VALUES ('empty', 'alice', '1. e4 e5 1-0', 'alice', 'bob', '1-0', 'blitz', 1, 1)`,
+    ).run();
+    expect(metricsAreFresh(db, "empty")).toBe(false);
   });
 });
