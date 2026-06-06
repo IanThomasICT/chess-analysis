@@ -14,7 +14,8 @@
 - [x] **2a** `metrics-store.ts`: `deriveMetrics` (raw → timeline → ext), `upsertGameMetrics` (writes both `game_metrics` + `game_metrics_ext` in one tx), `isMetricsStale`/`computeAnalysisSig` (D17), `autoFeedDrill` (R40/D23 ON CONFLICT DO NOTHING), `computeAndStoreMetrics` (derive + skip-if-current + upsert + feed).
 - [x] **2b** `server/scripts/build-metrics.ts` + `bun run metrics` script: tiered MultiPV (D1), depth-gated reanalysis, SIGINT-safe per-game, `import.meta.main` guard. Pure helpers `tierMultipv`/`shouldReanalyze`/`parseArgs` tested.
 - [x] **2c** Ongoing capture: R35 hook in `analyze.ts` (best-effort, after deep loop) + lazy rebuild in `GET /games/:gameId`. Tests: `metrics-store.test.ts` (5), `build-metrics.test.ts` (9). ✅ 396 pass.
-- [ ] 3/4/5 pending.
+- [x] **3** Read API: `server/routes/metrics.ts` (`GET /metrics/game/:gameId` with read-time derivations — elo_delta, result_quality, conversion flags, live critical/missed arrays; `GET /metrics/:username` list w/ per-time-class elo_delta; `GET /metrics/:username/export?format=csv|json`); 9 aggregate endpoints in `stats.ts` (consistency, session-fatigue, vs-opponent, acl-trend, leak-closure, tpr w/ FIDE dp table, repertoire, counterplay, endgame-conversion); registered in `index.ts`; client `api.ts` wrappers + interfaces. Tests: `metrics-route.test.ts` (4) + 34 new in `stats-route.test.ts`. ✅ 437 pass.
+- [ ] 4/5 pending.
 
 ## Context
 
