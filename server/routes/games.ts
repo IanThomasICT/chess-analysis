@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import type { Database } from "bun:sqlite";
 import { db } from "../lib/db";
 import { fetchRecentGames, type ChessComGame } from "../lib/chesscom";
-import { pgnToFens, pgnToMoves, pgnHeaders, pgnFinalClocks } from "../lib/pgn";
+import { pgnToFens, pgnToMoves, pgnHeaders, pgnFinalClocks, isStandard } from "../lib/pgn";
 import { isGameAnalyzed, getGameAnalysis, type AnalysisRow } from "../lib/engine";
 import { parseEloHeader } from "../lib/backfill";
 import { classifyOpening } from "../lib/openings";
@@ -40,6 +40,7 @@ interface GameRow {
   white_clock_final_s: number | null;
   black_clock_final_s: number | null;
   termination: string | null;
+  is_standard: number | null;
 }
 
 export interface GameRowData {
@@ -59,6 +60,7 @@ export interface GameRowData {
   white_clock_final_s: number | null;
   black_clock_final_s: number | null;
   termination: string | null;
+  is_standard: number;
 }
 
 /** Build a fully-populated game row from a ChessComGame and the requesting username. */
@@ -119,6 +121,7 @@ export function buildGameRow(
     white_clock_final_s: clocks.white,
     black_clock_final_s: clocks.black,
     termination,
+    is_standard: isStandard(g.pgn, g.rules) ? 1 : 0,
   };
 }
 
@@ -155,8 +158,8 @@ games.get("/games", async (c) => {
       INSERT OR REPLACE INTO games
         (id, username, pgn, white, black, result, time_class, end_time,
          white_elo, black_elo, user_elo, eco, opening,
-         white_clock_final_s, black_clock_final_s, termination)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         white_clock_final_s, black_clock_final_s, termination, is_standard)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const upsertMany = db.transaction((gamesToUpsert: ChessComGame[]) => {
@@ -179,6 +182,7 @@ games.get("/games", async (c) => {
           row.white_clock_final_s,
           row.black_clock_final_s,
           row.termination,
+          row.is_standard,
         );
       }
     });
@@ -329,11 +333,13 @@ export function computeAndCacheMetrics(
     return toMetricsResponse(cached);
   }
 
-  // Cache miss — compute from analysis rows
+  // Cache miss — compute from analysis rows.
+  // Restrict to rank-1 rows: deep (MultiPV=3) games store 3 rows/position, and
+  // feeding ranks 2/3 into gameMetrics would corrupt the per-side fold.
   const rows = database
     .prepare(
       `SELECT move_index, fen, move_san, score_cp, score_mate, best_move, depth
-       FROM analysis WHERE game_id = ? ORDER BY move_index`,
+       FROM analysis WHERE game_id = ? AND multipv_rank = 1 ORDER BY move_index`,
     )
     .all(gameId) as AnalysisRow[];
 

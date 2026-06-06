@@ -78,7 +78,7 @@ export function getGameResult(pgn: string): string | null {
 /**
  * Parse a `[%clk H:MM:SS.S]` string into total seconds. Returns null if unparseable.
  */
-function clkToSeconds(clk: string): number | null {
+export function clkToSeconds(clk: string): number | null {
   const m = /^(\d+):(\d+):(\d+(?:\.\d+)?)$/.exec(clk);
   if (m === null) {return null;}
   const h = parseInt(m[1], 10);
@@ -116,4 +116,90 @@ export function pgnFinalClocks(pgn: string): {
     m = re.exec(pgn);
   }
   return { white: lastWhite, black: lastBlack };
+}
+
+/**
+ * Parse the `[TimeControl]` header into base + increment seconds.
+ * "600+5" → { baseSeconds: 600, incrementSeconds: 5 }; "180" → { 180, 0 }.
+ * Returns null for correspondence/daily ("1/259200"), unlimited ("-"), or absent.
+ */
+export function parseTimeControl(
+  pgn: string,
+): { baseSeconds: number; incrementSeconds: number } | null {
+  const raw = pgnHeaders(pgn).TimeControl;
+  if (raw === undefined || raw === "" || raw === "-") {return null;}
+  // Daily games use "days/seconds" form (e.g. "1/259200") — not a clock control.
+  if (raw.includes("/")) {return null;}
+  const m = /^(\d+)(?:\+(\d+))?$/.exec(raw.trim());
+  if (m === null) {return null;}
+  const baseSeconds = parseInt(m[1], 10);
+  const incRaw = m.at(2);
+  const incrementSeconds = incRaw !== undefined ? parseInt(incRaw, 10) : 0;
+  if (Number.isNaN(baseSeconds) || Number.isNaN(incrementSeconds)) {return null;}
+  return { baseSeconds, incrementSeconds };
+}
+
+/**
+ * Per-ply remaining clock in seconds, in move order.
+ * Index `i` = remaining seconds for the side that played ply `i + 1`
+ * (index 0 = White's first move). Value is null when that ply has no `[%clk]`.
+ *
+ * Chess.com annotates every move with the mover's remaining clock AFTER the move,
+ * so clock-annotation order matches ply order.
+ */
+export function pgnPerPlyClocks(pgn: string): Array<number | null> {
+  const re = /\[%clk\s+([\d:.]+)\]/g;
+  const clocks: Array<number | null> = [];
+  let m = re.exec(pgn);
+  while (m !== null) {
+    clocks.push(clkToSeconds(m[1]));
+    m = re.exec(pgn);
+  }
+  return clocks;
+}
+
+export type TerminationKind =
+  | "checkmate"
+  | "resignation"
+  | "timeout"
+  | "abandoned"
+  | "agreement"
+  | "other";
+
+/**
+ * Classify a raw Chess.com `[Termination]` header into a coarse kind.
+ * Returns null when the raw value is absent.
+ */
+export function parseTermination(raw: string | null): TerminationKind | null {
+  if (raw === null || raw === "") {return null;}
+  const s = raw.toLowerCase();
+  if (s.includes("checkmate")) {return "checkmate";}
+  if (s.includes("on time")) {return "timeout";}
+  if (s.includes("resignation") || s.includes("resigned")) {return "resignation";}
+  if (s.includes("abandon")) {return "abandoned";}
+  if (s.includes("agreement")) {return "agreement";}
+  return "other";
+}
+
+/** Forfeit terminations (timeout or abandonment) — excluded from accuracy aggregates (D19). */
+export function isForfeit(raw: string | null): boolean {
+  const kind = parseTermination(raw);
+  return kind === "timeout" || kind === "abandoned";
+}
+
+/** The `[Variant]` header value, or null if absent. */
+export function parseVariant(pgn: string): string | null {
+  return pgnHeaders(pgn).Variant ?? null;
+}
+
+/**
+ * Whether a game is standard chess (R37/D20).
+ * False if a non-Standard `[Variant]` is present, or `rules` is anything but "chess".
+ * `rules` is the Chess.com PubAPI field ("chess", "chess960", "bughouse", …).
+ */
+export function isStandard(pgn: string, rules?: string): boolean {
+  if (rules !== undefined && rules !== "chess") {return false;}
+  const variant = parseVariant(pgn);
+  if (variant !== null && variant.toLowerCase() !== "standard") {return false;}
+  return true;
 }

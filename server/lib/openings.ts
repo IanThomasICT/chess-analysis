@@ -64,7 +64,9 @@ export function loadOpenings(): void {
  * Classify an opening from a list of SAN moves.
  * Returns the longest matching prefix entry, or null if no entry matches.
  */
-export function classifyOpening(sanMoves: string[]): { eco: string; name: string } | null {
+export function classifyOpening(
+  sanMoves: string[],
+): { eco: string; name: string; depth: number } | null {
   if (!loaded) {loadOpenings();}
   for (const entry of LOOKUP) {
     if (entry.tokens.length > sanMoves.length) {continue;}
@@ -76,7 +78,8 @@ export function classifyOpening(sanMoves: string[]): { eco: string; name: string
       }
     }
     if (match) {
-      return { eco: entry.eco, name: entry.name };
+      // depth = matched-prefix length in plies; first off-book ply ≈ depth + 1 (D33).
+      return { eco: entry.eco, name: entry.name, depth: entry.tokens.length };
     }
   }
   return null;

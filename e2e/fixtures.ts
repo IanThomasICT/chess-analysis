@@ -145,9 +145,18 @@ export function seedTestDatabase(dbPath = "analysis.db"): void {
       result TEXT,
       time_class TEXT,
       end_time INTEGER,
-      created_at INTEGER DEFAULT (unixepoch())
+      created_at INTEGER DEFAULT (unixepoch()),
+      is_standard INTEGER
     )
   `);
+  // Defensive: when the server already migrated `games` (migration #11) the
+  // CREATE IF NOT EXISTS above is a no-op, but a pre-#11 table would lack the
+  // column. Add it if missing so the seed insert below can set is_standard.
+  try {
+    db.run("ALTER TABLE games ADD COLUMN is_standard INTEGER");
+  } catch {
+    // column already exists — expected after migration #11
+  }
   db.run(`
     CREATE TABLE IF NOT EXISTS analysis (
       game_id TEXT NOT NULL,
@@ -174,8 +183,8 @@ export function seedTestDatabase(dbPath = "analysis.db"): void {
   );
 
   const upsertGame = db.prepare(`
-    INSERT OR REPLACE INTO games (id, username, pgn, white, black, result, time_class, end_time)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT OR REPLACE INTO games (id, username, pgn, white, black, result, time_class, end_time, is_standard)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)
   `);
   const upsertAnalysis = db.prepare(`
     INSERT OR REPLACE INTO analysis

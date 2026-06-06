@@ -237,6 +237,55 @@ export const migrations: Migration[] = [
       }
     },
   },
+  {
+    // Migration #11 — standard-chess flag on games + versioned per-game extended
+    // metrics cache (L2). `is_standard` is nullable (NULL = unprocessed) because
+    // SQLite cannot ADD a NOT NULL column without a constant default; the
+    // backfillIsStandard pass fills it on startup.
+    id: 11,
+    up: (database: Database) => {
+      database.run("ALTER TABLE games ADD COLUMN is_standard INTEGER");
+      database.run(`
+        CREATE TABLE IF NOT EXISTS game_metrics_ext (
+          game_id TEXT PRIMARY KEY,
+          metrics_version INTEGER NOT NULL,
+          analysis_sig TEXT NOT NULL,
+          multipv_max INTEGER NOT NULL,
+          accuracy_opening REAL, accuracy_middlegame REAL, accuracy_endgame REAL,
+          acl_opening REAL, acl_middlegame REAL, acl_endgame REAL,
+          middlegame_start_ply INTEGER, endgame_start_ply INTEGER,
+          time_opening_s REAL, time_middlegame_s REAL, time_endgame_s REAL, avg_move_time_s REAL,
+          accuracy_critical REAL, accuracy_quiet REAL, critical_positions INTEGER,
+          time_alloc_efficiency REAL,
+          max_blunder_run INTEGER, recovery_accuracy REAL,
+          time_trouble_moves INTEGER, time_trouble_errors INTEGER,
+          peak_eval_wp REAL, trough_eval_wp REAL,
+          out_of_book_ply INTEGER, out_of_book_eco_fallback INTEGER, post_book_accuracy REAL,
+          eval_opening_end_wp REAL,
+          user_moves INTEGER, clocks_available INTEGER, engine_depth_min INTEGER,
+          computed_at INTEGER,
+          FOREIGN KEY (game_id) REFERENCES games(id)
+        )
+      `);
+      database.run(
+        "CREATE INDEX IF NOT EXISTS idx_games_username_time_class ON games(username, time_class, end_time)",
+      );
+      database.run(
+        "CREATE INDEX IF NOT EXISTS idx_gme_version ON game_metrics_ext(metrics_version)",
+      );
+    },
+  },
+  {
+    // Migration #12 — version stamp on game_metrics + clean accuracy cutover.
+    // The accuracy aggregation changed from a bucket model to the Lichess
+    // weighted+harmonic mean (D21/D26), so every cached row is invalidated.
+    // Rows recompute lazily on next access (computeAndCacheMetrics) / batch run.
+    id: 12,
+    up: (database: Database) => {
+      database.run("ALTER TABLE game_metrics ADD COLUMN metrics_version INTEGER");
+      database.run("DELETE FROM game_metrics");
+    },
+  },
 ];
 
 export function runMigrations(database: Database): void {

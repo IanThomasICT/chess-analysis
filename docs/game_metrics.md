@@ -457,6 +457,76 @@ Cross-game aggregates (derived at read time, not stored — D7):
     *Risk:* every shipped accuracy number changes at once; acceptable for a
     single-user tool with no external consumers.
 
+27. **Mate-aware timeline via synthetic mate win%** (Q13). `mateToCp` saturation is
+    fixed by mapping a mate score to `win% = 100 − N·ε` (decays with mate distance
+    N; `ε` in `metrics-config.ts`), so the existing criticality gap (D9) and all
+    win%/`wp_loss` logic work unchanged on the synthetic value. Consequence:
+    criticality now picks up **mate-only-moves** (rank-1 mate vs rank-2 non-mate =
+    large gap) and **mate-distance gaps** (mate-in-1 vs mate-in-7 = real gap), with
+    no special-case branch in the fold code. Rationale: one formula reuses the whole
+    D9 plumbing instead of a parallel mate code path.
+
+28. **Decided-cutoff requires a held non-mate advantage** (Q13 × D22). Because the
+    synthetic mate win% (D27) sits ~99 (≥95), a naive D22 would fire the instant any
+    mate appears — including a long mate the user can still botch. So the decided
+    boundary fires only when **either** win% ≥ 95 from a **non-mate** eval **or** a
+    mate is **held for K consecutive plies** (`K` in `metrics-config.ts`). A mate
+    that appears then vanishes (mis-stepped) keeps counting toward accuracy/ACL.
+    Supersedes the plain ≥95 trigger in D22. *K — tunable.*
+
+29. **Out-of-book ply via a self-built peer-band frequency table + relative-frequency
+    floor** (Q14, R19). Replaces the named-ECO definition. The first out-of-book ply
+    = the first ply where the **move actually played** has **< X%** relative
+    frequency from that position in the peer-band table (`X` in `metrics-config.ts`).
+    Rationale: catches "you played a sideline" even from a popular position, scaled
+    to opponents you actually face.
+    - **Source — bulk PGN, built offline (not the live API).** Lichess serves the
+      explorer as a rate-limited API, so instead we **stream one recent monthly
+      standard rated dump** from `database.lichess.org`, keep only games with **both
+      players in ~1100–2200**, and aggregate move frequencies into a local table. One
+      download, zstd-decompress on the fly, games discarded after counting. Fully
+      self-contained, offline, regenerable — no live API dependency.
+    - **Depth — first ~24 plies (12 moves).** Only the opening/early-middlegame is
+      aggregated; the out-of-book scan stops at ply 24 (anything deeper is always
+      "out of book"). Keeps the table small.
+    - **Key — normalized FEN** (piece placement + side-to-move + castling +
+      en-passant; **drop** halfmove/fullmove counters). Transpositions collapse to one
+      row → correct frequency, no false novelty. Matches the existing `analysis`
+      `fen_key`.
+    - **Masters DB deferred.** The ideal-line/theory reference (originally part of
+      D29) is **not in v1** — it's study-surfacing, not the cutoff. Add later (likely
+      the small masters API, lazy-cached). Peer-band out-of-book ships alone.
+    - *Scope note:* this is **reference data**, not a new *game* source — the
+      Chess.com-only non-goal (game ingestion) is unaffected. The frequency table is
+      static, regenerable from the dump; not part of the L0→L2 cache.
+
+33. **Out-of-book fallback to named-ECO** (Q14 follow-up). When peer-band frequency
+    data is unavailable for a position (table not built yet, or scan ran past the
+    24-ply build depth on a line never sampled), `out_of_book_ply` **falls back to
+    the named-ECO prefix end** (the original R19 definition) and provenance records
+    an `eco_fallback` flag so a fallback value is never confused with a true
+    frequency-based cut. Rationale: always produces a usable value; degrades
+    gracefully before the table exists.
+
+30. **Daily/correspondence = `clocks_available = 0`** (Q16). Daily games have no
+    per-move `[%clk]`; treat them as no-clock. Time fields null; excluded from the
+    time aggregates (R4/R15/R25), retained everywhere else. No separate day-budget
+    time model. Rationale: daily is a negligible slice for a bullet/blitz/rapid
+    improver; a parallel time path isn't worth it.
+
+31. **Aggregate performance: indexes only, no aggregate cache** (Q15). Add indexes
+    (`games(username, time_class, end_time)`, `game_metrics_ext` provenance) and ship
+    the R21–R32 read-time SQL as-is. SQLite over single-user thousands-of-rows is
+    fast; revisit (a thin materialized aggregate table) only if a load is *measured*
+    slow. Rationale: avoid a second cache to version/invalidate before there's
+    evidence it's needed.
+
+32. **Username assumed fixed** (Q17). The Chess.com handle is treated as stable; it
+    keys the dataset and the per-time-class Elo pools, with no alias map. If the
+    handle ever changes, re-import under the new handle. Rationale: single-user tool,
+    rename is rare; an alias map / canonical player-id keying is deferred until a
+    real rename happens.
+
 ---
 
 ## Architecture: raw → derived (drift control)
@@ -499,10 +569,11 @@ Drift is controlled by three rules:
 | `server/routes/stats.ts` | **Add** read-time aggregate endpoints over `game_metrics_ext` for R21–R23 (consistency, session fatigue, vs-opponent) — pure SQL (D7). |
 | `shared/classify.ts` | `classifySwing` / `MoveClass` / thresholds — critical-move and missed-conversion classification. |
 | `server/lib/pgn.ts` | `pgnToFens`, `pgnToMoves`, `pgnHeaders`, `clkToSeconds`; **add** per-ply clock extraction + `[TimeControl]` parse. |
-| `server/lib/openings.ts` | `classifyOpening` fallback when `games.opening` is empty. |
+| `server/lib/openings.ts` | `classifyOpening` fallback when `games.opening` is empty. Still used for `eco`/opening name (R3); out-of-book ply now comes from the explorer dump (D29), not the named-ECO prefix. |
+| `server/lib/explorer.ts` *(new)*, `server/scripts/build-explorer.ts` *(new)*, `server/data/explorer/*` *(new)* | D29 — `build-explorer.ts` streams one monthly Lichess rated dump (`database.lichess.org`), filters to the peer band (1100–2200) and first 24 plies, aggregates move frequencies into a normalized-FEN-keyed local table. `explorer.ts` exposes `positionFrequency(fenKey, move)` for the out-of-book scan, with named-ECO fallback (D33). Masters reference deferred. Static, regenerable; not part of the L0→L2 cache. |
 | `server/lib/phases.ts` *(new)* | Lichess Divider port — `dividePhases(fens) → { middlegameStartPly, endgameStartPly }`. |
 | `server/lib/ply-timeline.ts` *(new)* | Layer 1 — pure `buildTimeline(pgn, analysisRows) → EnrichedPly[]` shared by batch + Analysis page (D16). |
-| `server/lib/metrics-config.ts` *(new)* | Single home for all D8–D15 thresholds + `METRICS_VERSION` (D18). |
+| `server/lib/metrics-config.ts` *(new)* | Single home for all D8–D15 thresholds + `METRICS_VERSION` (D18). Adds, with shipping defaults: mate-win% decay `ε = 0.01` (D27), decided mate-hold `K = 3` plies (D28), out-of-book relative-frequency floor `X = 5%`, peer band `1100–2200`, build depth `24` plies (D29). All retunable; threshold bumps bump `METRICS_VERSION`. |
 | `server/lib/game-metrics.ts` *(new)* | Layer 2 — pure `buildGameMetrics(timeline, gameRow) → GameMetrics` (folds over the timeline). |
 | `server/scripts/build-metrics.ts` *(new)* | CLI batch runner (iterate user games, ensure analysis, build + upsert metrics rows). |
 | `client/src/pages/Analysis.tsx` | Existing client-only `missedConversions` — align to D2. |
@@ -557,31 +628,26 @@ over `games` — D5), and the read-time classifications above.
 - Round 1 (Q1–Q4) → D1 / R35 / R36+D19 / D17.
 - Round 2 (Q5–Q8) → R37+D20 / R38+D21 / R39+D22 / R40+D23.
 - Round 3 (Q9–Q12) → D24 / D25 / D26 / R41.
+- Round 4 (Q13–Q17) → D27+D28 / D29 / D31 / D30 / D32.
+- Round 5 (D29 mechanics) → D29 (bulk-PGN peer table, 24-ply, normalized-FEN) + D33 (ECO fallback); defaults locked (ε=0.01, K=3, X=5%).
 
-*Open (recorded for a later round — must be resolved before implementation):*
+*All open questions resolved. Ready for implementation.* History of round 4:
 
-- **Q13 — Mate-score saturation vs criticality/decided.** `mateToCp` collapses all
-  mates to ±1000, so win% saturates: two distinct mating lines show a criticality
-  gap of 0 (D9 misses a mate-only-move), and a "decided" cutoff (D22) may trigger
-  the instant a mate appears. Does the timeline need a mate-aware criticality/decided
-  rule (e.g. compare mate distance, not win%)?
-- **Q14 — Opening-book granularity for out-of-book ply (R19).** The lichess-org TSV
-  is a *named-opening* book, not a theory/popularity book — "out of book" means "no
-  longer a named ECO line," which can be very shallow. Is that the intended
-  definition, or do we want a depth/popularity-based book (e.g. a moves database)
-  to mark the real first-novelty ply?
-- **Q15 — Read-time aggregate performance at scale.** R21–R32 run pure SQL over
-  `game_metrics_ext ⋈ games ⋈ game_metrics ⋈ blunder_tags` on every dashboard load. What
-  indexes (e.g. on `games(username, time_class, end_time)`, `game_metrics_ext` provenance)
-  and/or a thin aggregate cache are needed so /stats stays fast at thousands of
-  games? Currently unspecified.
-- **Q16 — Daily/correspondence clock semantics.** Daily games have no per-move
-  `[%clk]` (or per-move day budgets), so think-time (D4) and time-trouble (D8) are
-  undefined. Treat daily as always `clocks_available = 0`, or model day-based
-  time use separately? Affects R4/R15/R25 coverage.
-- **Q17 — Username stability.** `username` keys the dataset and Elo pools. If the
-  Chess.com handle changes (or historical games carry the old handle), how are
-  prior games reconciled? Assumed fixed for now — confirm or design an alias map.
+- **Q13 — Mate-score saturation vs criticality/decided.** `mateToCp` collapsed all
+  mates to ±1000, saturating win% (mate-only-moves invisible to D9; D22 fired on
+  first mate). → **Resolved: D27** (synthetic mate win% `100 − N·ε`, reuses D9) +
+  **D28** (decided needs a held non-mate advantage or a mate held K plies).
+- **Q14 — Opening-book granularity for out-of-book ply (R19).** Named-ECO book was
+  too shallow. → **Resolved: D29** — self-built peer-band (1100–2200) frequency table
+  from one monthly Lichess rated dump, first 24 plies, normalized-FEN key,
+  relative-frequency floor (X=5%); masters deferred. **D33** — named-ECO fallback
+  when frequency data is absent.
+- **Q15 — Read-time aggregate performance at scale.** → **Resolved: D31** — indexes
+  only now; thin aggregate cache deferred until measured slow.
+- **Q16 — Daily/correspondence clock semantics.** → **Resolved: D30** — daily =
+  `clocks_available = 0`, excluded from time aggregates only.
+- **Q17 — Username stability.** → **Resolved: D32** — assumed fixed; no alias map;
+  re-import on rename.
 
 ---
 
@@ -596,12 +662,20 @@ over `games` — D5), and the read-time classifications above.
   sparseness, boundary scan. Mixedness optional (flag as TODO if deferred).
 - Extend `pgn.ts`: `parseTimeControl`, `pgnPerPlyClocks`, `parseTermination`,
   `parseVariant`/`isStandard`.
+- `server/scripts/build-explorer.ts` + `server/lib/explorer.ts` +
+  `server/data/explorer/`: `build-explorer.ts` streams one monthly Lichess rated
+  dump, band-filters (1100–2200) + first 24 plies, aggregates into a normalized-FEN
+  freq table (D29); `explorer.ts` exposes `positionFrequency(fenKey, move)` with
+  named-ECO fallback (D33). Masters deferred. Daily games skip clocks (D30) —
+  `pgnPerPlyClocks` returns null and `clocks_available = 0`.
 
 ### Phase 1 — Shared timeline + metrics builder
 - `server/lib/ply-timeline.ts`: pure `buildTimeline(pgn, analysisRows) →
   EnrichedPly[]` (per-ply side/is_user/win%/wp_loss/class/think_time/phase/
   criticality + the `decided` boundary, D22) — Layer 1, shared by batch + Analysis
-  page (D16).
+  page (D16). Win% uses the **synthetic mate value** `100 − N·ε` (D27) so criticality
+  catches mate-only-moves; the `decided` boundary requires a held non-mate advantage
+  or a mate held K plies (D28).
 - **Migrate `metrics.ts` accuracy to Lichess (R38, D21):** implement
   volatility-weighted + harmonic-mean game accuracy on `moveAccuracy`; delete
   `aggregateAccuracy`/`classAccuracyScore`; honor the decided-position cutoff
@@ -620,7 +694,8 @@ over `games` — D5), and the read-time classifications above.
   - only-move detection from rank1−rank2 win% gap → critical-position accuracy
     (R17, D9),
   - eval peak/trough + winning/losing/converted/saved flags (R18, D10),
-  - out-of-book ply from `classifyOpening` prefix + post-book accuracy (R19),
+  - out-of-book ply from the explorer peer-band relative-frequency floor (D29) +
+    post-book accuracy (R19),
   - eval at opening-end ply (R20),
   - time-allocation efficiency: think-time↔criticality correlation (R25, D14),
   - opening from header or `classifyOpening` (R3),
