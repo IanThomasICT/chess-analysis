@@ -11,6 +11,9 @@ import { computeAndStoreMetrics } from "../lib/metrics-store";
 
 const BULK_COMPUTE_LIMIT = 20;
 
+/** How many recent monthly archives to pull from Chess.com on import. */
+const FETCH_MONTHS = 6;
+
 function normalizeHeader(raw: string | undefined): string | null {
   if (raw === undefined || raw.trim() === "") {
     return null;
@@ -153,7 +156,7 @@ games.get("/games", async (c) => {
 
   // Fetch from Chess.com + upsert
   try {
-    const chessComGames = await fetchRecentGames(username, 3);
+    const chessComGames = await fetchRecentGames(username, FETCH_MONTHS);
 
     const upsert = db.prepare(`
       INSERT OR REPLACE INTO games

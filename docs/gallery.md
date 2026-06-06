@@ -61,7 +61,7 @@ File: `client/src/pages/Home.tsx`
 
 The page uses TanStack Query (`useQuery`) to fetch games via `fetchGames(username)` from `client/src/api.ts`. The server handler:
 1. Reads `?username=` from the URL query params
-2. Fetches the last 3 months from Chess.com
+2. Fetches the last 6 months from Chess.com (`FETCH_MONTHS` in `server/routes/games.ts`)
 3. Upserts all games into the `games` table (using `INSERT OR REPLACE`) — each row populated via the exported `buildGameRow(username, ChessComGame)` helper, which extracts WhiteElo / BlackElo / ECO / Opening from PGN headers (falling back to `classifyOpening(pgnToMoves(pgn))` when headers are absent)
 4. If the Chess.com fetch fails, falls through to load from the DB cache
 5. Returns all games for the username, sorted by `end_time DESC`
