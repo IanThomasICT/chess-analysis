@@ -138,8 +138,23 @@ Game metadata from Chess.com. `id` is the numeric ID from the game URL.
 | `user_elo` | INTEGER | Queried user's rating at game end (denormalized for filtering) |
 | `eco` | TEXT | ECO code parsed from PGN `[ECO]` header |
 | `opening` | TEXT | Opening name parsed from PGN `[Opening]` header |
+| `is_standard` | INTEGER | 1 = standard chess, 0 = variant; NULL = unprocessed (D20) |
+| `vs_bot` | INTEGER | 1 = opponent is a Chess.com bot, 0 = real person; NULL = unresolved. Gallery + metrics keep only real-people games (exclude `vs_bot = 1`) |
 
 Index: `idx_games_username` on `username`.
+
+### `players`
+
+Cache of Chess.com profile `status` per opponent so bot detection (`vs_bot`) costs
+at most one profile fetch per account. Status `"computer"` ⇒ bot. Filled by
+`resolveBots` / `backfillBotFlags` in `server/lib/players.ts`.
+
+| Column | Type | Description |
+|---|---|---|
+| `username` | TEXT PK | Opponent handle (lowercased) |
+| `status` | TEXT | Raw Chess.com profile status (`basic`/`premium`/`computer`/…) |
+| `is_bot` | INTEGER NOT NULL | 1 if `status = "computer"` |
+| `fetched_at` | INTEGER NOT NULL | unix epoch (seconds) |
 
 ### `analysis`
 

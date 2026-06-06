@@ -540,6 +540,15 @@ Cross-game aggregates (derived at read time, not stored — D7):
     rename is rare; an alias map / canonical player-id keying is deferred until a
     real rename happens.
 
+35. **Real-people games only — bots excluded from the dataset.** Only standard games
+    against human opponents are tracked. A game's opponent is classified via the
+    Chess.com profile `status` (`"computer"` = bot, cached in `players`); games against
+    bots are flagged `games.vs_bot = 1` at import and excluded from the gallery, bulk
+    metrics, and the metrics batch (which also backfills the flag for older games).
+    Unresolved opponents (`vs_bot` NULL) are kept so a network hiccup never drops a real
+    game. Rationale: bot games don't reflect performance vs people and would skew every
+    aggregate.
+
 34. **The bulk backfill is operationally robust** (R8 amplified). As the tool's only
     multi-hour job, it validates the engine before starting (fail fast, not on game 1),
     isolates per-game failure (one bad game is logged and skipped, never aborts the

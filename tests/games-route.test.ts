@@ -123,6 +123,12 @@ describe("buildGameRow", () => {
     expect(row.username).toBe("alice");
   });
 
+  test("vs_bot reflects the resolved opponent flag (default unresolved = null)", () => {
+    expect(buildGameRow("alice", makeGame()).vs_bot).toBeNull();
+    expect(buildGameRow("alice", makeGame(), true).vs_bot).toBe(1);
+    expect(buildGameRow("alice", makeGame(), false).vs_bot).toBe(0);
+  });
+
   test("white wins → result is '1-0'", () => {
     const row = buildGameRow("alice", makeGame());
     expect(row.result).toBe("1-0");

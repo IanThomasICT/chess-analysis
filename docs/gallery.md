@@ -38,6 +38,15 @@ interface ChessComGame {
 
 All requests include a `User-Agent: chess-analyzer/1.0` header as required by Chess.com's API policy.
 
+### Bot exclusion (real-people only)
+
+`fetchPlayerProfile(username)` reads a Chess.com profile's `status` (`"computer"` =
+bot). On import, `server/lib/players.ts` `resolveBots()` classifies each opponent
+(cached in the `players` table — one fetch per account, concurrency-capped) and the
+game is stored with `games.vs_bot` set. The gallery list and bulk-metrics queries
+exclude `vs_bot = 1`, so only games against real people are shown/analyzed; NULL
+(unresolved) games are kept. See `game_metrics.md` D35.
+
 ### Input Validation
 
 The `username` query parameter is validated against `/^[a-zA-Z0-9_-]{1,50}$/` in the route handler (`server/routes/games.ts`) before being passed to any API or DB call. Invalid usernames return 400.

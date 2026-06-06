@@ -286,6 +286,24 @@ export const migrations: Migration[] = [
       database.run("DELETE FROM game_metrics");
     },
   },
+  {
+    // Migration #13 — non-human opponent flag + player-profile cache. `vs_bot` is
+    // nullable (NULL = unresolved); resolveBots/backfillBotFlags fill it from the
+    // Chess.com profile `status` ("computer" = bot). Gallery, bulk metrics, and the
+    // metrics batch exclude vs_bot = 1 so only games vs real people are kept.
+    id: 13,
+    up: (database: Database) => {
+      database.run("ALTER TABLE games ADD COLUMN vs_bot INTEGER");
+      database.run(`
+        CREATE TABLE IF NOT EXISTS players (
+          username TEXT PRIMARY KEY,
+          status TEXT,
+          is_bot INTEGER NOT NULL,
+          fetched_at INTEGER NOT NULL
+        )
+      `);
+    },
+  },
 ];
 
 export function runMigrations(database: Database): void {

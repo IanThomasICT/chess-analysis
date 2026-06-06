@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import type { Database } from "bun:sqlite";
 import { db } from "../lib/db";
 import { fetchRecentGames, type ChessComGame } from "../lib/chesscom";
+import { resolveBots } from "../lib/players";
 import { pgnToFens, pgnToMoves, pgnHeaders, pgnFinalClocks, isStandard } from "../lib/pgn";
 import { isGameAnalyzed, getGameAnalysis, type AnalysisRow } from "../lib/engine";
 import { parseEloHeader } from "../lib/backfill";
@@ -45,6 +46,7 @@ interface GameRow {
   black_clock_final_s: number | null;
   termination: string | null;
   is_standard: number | null;
+  vs_bot: number | null;
 }
 
 export interface GameRowData {
@@ -65,12 +67,24 @@ export interface GameRowData {
   black_clock_final_s: number | null;
   termination: string | null;
   is_standard: number;
+  vs_bot: number | null;
 }
 
-/** Build a fully-populated game row from a ChessComGame and the requesting username. */
+/** The opponent's username — whichever side is not the requesting user. */
+export function opponentUsername(username: string, g: ChessComGame): string {
+  return username.toLowerCase() === g.white.username.toLowerCase()
+    ? g.black.username
+    : g.white.username;
+}
+
+/**
+ * Build a fully-populated game row from a ChessComGame and the requesting username.
+ * `vsBot` is the opponent's resolved bot status (null = unresolved → stored NULL).
+ */
 export function buildGameRow(
   username: string,
   g: ChessComGame,
+  vsBot: boolean | null = null,
 ): GameRowData {
   const gameId = g.url.split("/").pop() ?? g.url;
 
@@ -107,6 +121,10 @@ export function buildGameRow(
 
   const clocks = pgnFinalClocks(g.pgn);
   const termination = normalizeHeader(h.Termination);
+  let vsBotFlag: number | null = null;
+  if (vsBot !== null) {
+    vsBotFlag = vsBot ? 1 : 0;
+  }
 
   return {
     id: gameId,
@@ -126,6 +144,7 @@ export function buildGameRow(
     black_clock_final_s: clocks.black,
     termination,
     is_standard: isStandard(g.pgn, g.rules) ? 1 : 0,
+    vs_bot: vsBotFlag,
   };
 }
 
@@ -158,17 +177,25 @@ games.get("/games", async (c) => {
   try {
     const chessComGames = await fetchRecentGames(username, FETCH_MONTHS);
 
+    // Resolve opponents to bots vs real people (cached; only new accounts hit the
+    // network) so each row records whether it was played against a bot.
+    const botMap = await resolveBots(
+      chessComGames.map((g) => opponentUsername(username, g)),
+    );
+
     const upsert = db.prepare(`
       INSERT OR REPLACE INTO games
         (id, username, pgn, white, black, result, time_class, end_time,
          white_elo, black_elo, user_elo, eco, opening,
-         white_clock_final_s, black_clock_final_s, termination, is_standard)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         white_clock_final_s, black_clock_final_s, termination, is_standard, vs_bot)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const upsertMany = db.transaction((gamesToUpsert: ChessComGame[]) => {
       for (const g of gamesToUpsert) {
-        const row = buildGameRow(username, g);
+        const opp = opponentUsername(username, g).toLowerCase();
+        const resolvedBot = botMap.get(opp);
+        const row = buildGameRow(username, g, resolvedBot ?? null);
         upsert.run(
           row.id,
           row.username,
@@ -187,6 +214,7 @@ games.get("/games", async (c) => {
           row.black_clock_final_s,
           row.termination,
           row.is_standard,
+          row.vs_bot,
         );
       }
     });
@@ -198,14 +226,15 @@ games.get("/games", async (c) => {
     // Fall through to load from DB cache
   }
 
-  // Load from DB
+  // Load from DB — exclude games against bots (real people only); NULL = unresolved
+  // is kept so a network hiccup never hides a genuine game.
   const rows = db
     .prepare(
       `SELECT id, username, pgn, white, black, result, time_class, end_time,
               white_elo, black_elo, user_elo, eco, opening,
               white_clock_final_s, black_clock_final_s, termination
        FROM games
-       WHERE username = ?
+       WHERE username = ? AND vs_bot IS NOT 1
        ORDER BY end_time DESC`,
     )
     .all(username.toLowerCase()) as GameRow[];
@@ -445,7 +474,7 @@ export function fetchBulkMetricsFor(
               gm.acl_white, gm.acl_black, gm.computed_at
          FROM games g
          LEFT JOIN game_metrics gm ON g.id = gm.game_id
-        WHERE lower(g.username) = lower(?)
+        WHERE lower(g.username) = lower(?) AND g.vs_bot IS NOT 1
         ORDER BY g.end_time DESC`,
     )
     .all(username) as JoinRow[];
