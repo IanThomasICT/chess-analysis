@@ -18,11 +18,14 @@
 
 ```
 Win%        = 50 + 50 * (2 / (1 + exp(-0.00368208 * cp)) - 1)         // [0, 100]
-moveAccuracy= clamp(0, 100, 103.1668 * exp(-0.04354 * wp_delta) - 3.1669 + 1)
+moveAccuracy= after >= before ? 100
+            : clamp(0, 100, 103.1668100711649 * exp(-0.04354415386753951 * wp_delta) - 3.166924740191411 + 1)
 mateToCp    = sign(mate) * 1000                                       // mate normalisation
 ```
 
-`wp_delta` is in **percentage points** (Win% in 0..100) — Lichess constants assume that scale.
+`wp_delta` is in **percentage points** (Win% in 0..100) — Lichess constants assume that scale. The
+`moveAccuracy` constants are verbatim from lila `AccuracyPercent.fromWinPercents`; the trailing `+1`
+is the "uncertainty bonus".
 
 ## Classification thresholds (wp_delta on [0, 1])
 
@@ -40,19 +43,12 @@ mateToCp    = sign(mate) * 1000                                       // mate no
 
 `gameMetrics(positions: AnalysisRow[]): { white, black }` walks position transitions `i → i+1`. The mover for transition `i` is `i % 2 === 0 ? "w" : "b"`.
 
-- **Accuracy**: bucket-based Chess.com-style score, computed by `aggregateAccuracy(classes)`. Each move gets a bucket score from its classification:
+- **Accuracy**: the exact Lichess game-accuracy aggregation (lila `AccuracyPercent`). Built from the full White-perspective Win% sequence via two helpers in `metrics.ts`:
+  - `plyAccuracies(winPctWhite)` → per-ply `{ accuracy, weight }`. Window size = `clamp(floor(plies/10), 2, 8)`; the windows list is `(windowSize−2)` copies of the leading window followed by a sliding window over the sequence (1:1 with plies). `weight = clamp(populationStdDev(window), 0.5, 12)` (volatility weighting). Per-ply accuracy is from the mover's perspective.
+  - `combineAccuracy(entries)` → `(weightedMean + harmonicMean) / 2`. The harmonic mean floors each accuracy at 1 to avoid div-by-zero; it is what makes a single big blunder hurt more than a plain average would.
+  - `gameMetrics` slices the per-ply entries by index parity (even = White) to get each side's accuracy.
 
-  | Class | Score |
-  |---|---|
-  | best | 100 |
-  | good | 90 |
-  | inaccuracy | 70 |
-  | mistake | 40 |
-  | blunder | 10 |
-
-  Consecutive blunders past the first in a run are weighted at `CONSECUTIVE_BLUNDER_DAMPING = 0.3` so one bad streak doesn't tank the whole game's number. Final value = weighted mean of bucket scores.
-
-  > Chess.com's CAPS2 is proprietary. This shape matches their published behaviour (category-based, with multi-blunder dampening) and produces numbers in the same range, but is not a bit-exact replica.
+  > This is bit-for-bit the lila formula (verified against `AccuracyPercent.scala` + scalalib `Maths.scala`), replacing the previous bucket model. The cutover is migration #12 (`DELETE FROM game_metrics`, `METRICS_VERSION = 2`).
 
 - **Blunders / mistakes / inaccuracies**: counts per side from `classifyMove`. All plies count (opening book included for visibility).
 - **ACL**: `mean(max(0, cpBefore - cpAfter))` per side, skipping the first 8 plies. Per-move loss capped at 1000.

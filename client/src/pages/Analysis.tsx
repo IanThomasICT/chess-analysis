@@ -10,6 +10,7 @@ import { EvalGraph } from "../components/EvalGraph";
 import { MoveList } from "../components/MoveList";
 import { RecurrencePanel } from "../components/RecurrencePanel";
 import { AlternativesPanel } from "../components/AlternativesPanel";
+import { MetricsCard } from "../components/MetricsCard";
 import { classifySwing, type MoveClass } from "../lib/classify";
 
 function accuracyChipClass(acc: number): string {
@@ -814,6 +815,9 @@ export function Analysis() {
             playedMove={moves[currentMove - 1]?.san}
           />
         )}
+
+        {/* Extended game metrics — supplementary card, renders nothing until metrics exist */}
+        <MetricsCard gameId={game.id} />
       </main>
     </div>
   );

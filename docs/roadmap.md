@@ -4,6 +4,15 @@
 
 `core.md` defines the project vision: a personal tool for Ian to improve his Chess.com game, optimized for three metrics — **win rate**, **accuracy / blunder rate**, **elo**. This doc catalogs features that move those metrics but are not yet built. It's a research input for future implementation plans, not a commitment. Each entry includes enough detail (data sources, schema impact, technical sketch, open questions) to scope an implementation plan in one sitting.
 
+> **Update:** Tier-1 aggregation/metrics and a large slice of the deeper analytics
+> are now built — see [`game_metrics.md`](game_metrics.md) (design) and `PLAN.md`
+> (build sequence). Per-game accuracy (now the exact Lichess formula), blunder
+> counts, by-side breakdown, per-phase accuracy/ACL, time management, critical/quiet
+> accuracy, tilt/recovery, conversion/defense, result-quality, Elo delta, and the
+> cross-game aggregates (consistency, session-fatigue, vs-opponent, ACL trend,
+> leak-closure, TPR, repertoire, counterplay, endgame-conversion) all shipped.
+> Entries below that overlap are kept for historical context.
+
 **How to use this doc:**
 - Read the "Quick reference" table to triage.
 - Each feature entry below is self-contained: data, sketch, complexity, risks.

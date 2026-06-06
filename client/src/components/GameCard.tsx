@@ -18,6 +18,10 @@ interface GameCardProps {
   blackClockFinalS?: number | null;
   /** PGN Termination header, e.g. "Player won on time". */
   termination?: string | null;
+  /** resultQuality from extended metrics — chips shown for swindle_win / unlucky_loss only. */
+  resultQuality?: string;
+  /** When true the user was in time trouble. */
+  timeTroubleFlag?: boolean;
 }
 
 function accuracyColor(acc: number): string {
@@ -123,6 +127,8 @@ export function GameCard({
   whiteClockFinalS,
   blackClockFinalS,
   termination,
+  resultQuality,
+  timeTroubleFlag,
 }: GameCardProps) {
   const date = new Date(endTime * 1000).toLocaleDateString("en-US", {
     month: "short",
@@ -153,6 +159,9 @@ export function GameCard({
       </div>
       {(accuracy !== undefined ||
         (blunders !== undefined && blunders > 0) ||
+        resultQuality === "swindle_win" ||
+        resultQuality === "unlucky_loss" ||
+        timeTroubleFlag === true ||
         userLostOnTime(result, white, username, termination, whiteClockFinalS, blackClockFinalS)) && (
         <div className="flex flex-wrap gap-1 mt-2">
           {accuracy !== undefined && (
@@ -163,6 +172,24 @@ export function GameCard({
           {blunders !== undefined && blunders > 0 && (
             <span className={`inline-block px-2 py-0.5 rounded text-xs font-semibold ${blunderColor(blunders)}`}>
               {blunders} blunder{blunders === 1 ? "" : "s"}
+            </span>
+          )}
+          {resultQuality === "swindle_win" && (
+            <span className="inline-block px-2 py-0.5 rounded text-xs font-semibold bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200">
+              Swindle
+            </span>
+          )}
+          {resultQuality === "unlucky_loss" && (
+            <span className="inline-block px-2 py-0.5 rounded text-xs font-semibold bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">
+              Unlucky
+            </span>
+          )}
+          {timeTroubleFlag === true && (
+            <span
+              className="inline-block px-2 py-0.5 rounded text-xs font-semibold bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200"
+              title="Time trouble during the game"
+            >
+              ⏱ time
             </span>
           )}
           {userLostOnTime(result, white, username, termination, whiteClockFinalS, blackClockFinalS) && (

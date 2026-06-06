@@ -4,8 +4,10 @@ import { useQuery } from "@tanstack/react-query";
 import {
   fetchGames,
   fetchBulkMetrics,
+  fetchUserMetrics,
   type GameRow,
   type GameMetrics,
+  type GameMetricSummary,
   type PerSideMetrics,
 } from "../api";
 import { GameCard } from "../components/GameCard";
@@ -46,6 +48,17 @@ export function Home() {
     queryFn: async () => fetchBulkMetrics(usernameParam),
     enabled: usernameParam !== "",
   });
+
+  const { data: userMetricsList } = useQuery({
+    queryKey: ["userMetrics", usernameParam],
+    queryFn: async () => fetchUserMetrics(usernameParam),
+    enabled: usernameParam !== "",
+  });
+
+  const userMetricsById = useMemo((): Map<string, GameMetricSummary> => {
+    if (userMetricsList === undefined) {return new Map();}
+    return new Map(userMetricsList.map((m) => [m.gameId, m]));
+  }, [userMetricsList]);
 
   const games = data?.games ?? EMPTY_GAMES;
   const username = data?.username ?? null;
@@ -251,6 +264,7 @@ export function Home() {
                   m !== null && m !== undefined
                     ? pickSide(m, side).blunders
                     : undefined;
+                const extMetric = userMetricsById.get(g.id);
                 return (
                   <GameCard
                     key={g.id}
@@ -266,6 +280,8 @@ export function Home() {
                     whiteClockFinalS={g.white_clock_final_s}
                     blackClockFinalS={g.black_clock_final_s}
                     termination={g.termination}
+                    resultQuality={extMetric?.resultQuality}
+                    timeTroubleFlag={extMetric?.timeTroubleFlag}
                   />
                 );
               })}

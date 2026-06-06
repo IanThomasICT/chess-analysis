@@ -15,7 +15,9 @@
 - [x] **2b** `server/scripts/build-metrics.ts` + `bun run metrics` script: tiered MultiPV (D1), depth-gated reanalysis, SIGINT-safe per-game, `import.meta.main` guard. Pure helpers `tierMultipv`/`shouldReanalyze`/`parseArgs` tested.
 - [x] **2c** Ongoing capture: R35 hook in `analyze.ts` (best-effort, after deep loop) + lazy rebuild in `GET /games/:gameId`. Tests: `metrics-store.test.ts` (5), `build-metrics.test.ts` (9). ✅ 396 pass.
 - [x] **3** Read API: `server/routes/metrics.ts` (`GET /metrics/game/:gameId` with read-time derivations — elo_delta, result_quality, conversion flags, live critical/missed arrays; `GET /metrics/:username` list w/ per-time-class elo_delta; `GET /metrics/:username/export?format=csv|json`); 9 aggregate endpoints in `stats.ts` (consistency, session-fatigue, vs-opponent, acl-trend, leak-closure, tpr w/ FIDE dp table, repertoire, counterplay, endgame-conversion); registered in `index.ts`; client `api.ts` wrappers + interfaces. Tests: `metrics-route.test.ts` (4) + 34 new in `stats-route.test.ts`. ✅ 437 pass.
-- [ ] 4/5 pending.
+- [x] **4** Client surfacing (R41): `MetricsCard.tsx` (new) wired into `Analysis.tsx` (per-game phases/time/critical/conversion/result-quality + top critical moves & missed conversions); `GameCard.tsx` Swindle/Unlucky/time-trouble chips + `Home.tsx` `fetchUserMetrics` plumbing; 6 new `/stats` tabs (consistency, vs-opponent, acl-trend, tpr, leak-closure, repertoire); `EloTrendChart.tsx` running-peak overlay + net-gain/peak callout. Note: 4a left the existing client move-classification/keyboard-nav intact (already shares `classifySwing` thresholds with the server, so no drift); MetricsCard is additive.
+- [x] **5** Docs: `docs/README.md` index row, `docs/metrics.md` (Lichess accuracy aggregation rewrite), `docs/game_metrics.md` implemented-status banner, `docs/roadmap.md` cross-link. ✅ `bun run validate` green, **437 unit tests pass**.
+- [ ] **e2e** verification pending (requires `bun run dev` + Stockfish; existing e2e + new metrics-surface specs not yet run this session).
 
 ## Context
 
