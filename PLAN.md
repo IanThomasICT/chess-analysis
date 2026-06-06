@@ -9,7 +9,9 @@
 - [x] Phase-0 tests: `pgn-parsers.test.ts`, `phases.test.ts` (+ migration #11 / multipv regression pending append).
 - [x] **Risk 1 resolved**: exact Lichess accuracy algorithm verified against lila `AccuracyPercent.scala` + scalalib `Maths.scala`. Window = `clamp(floor(plies/10),2,8)` over full interleaved win% seq; weight = clamp(popStdDev,0.5,12); per-color = (weightedMean + harmonicMean)/2.
 - [x] **1a** Lichess accuracy migration: `moveAccuracy` (exact lila constants + ≥ guard), `plyAccuracies`/`combineAccuracy` (windowed std-dev weight + weighted/harmonic mean), `gameMetrics` rewired; deleted bucket model; migration #12 (`metrics_version` + clean cutover); `METRICS_VERSION=2`; glossary reworded. Tests: metrics aggregation, migration #11/#12 schema, multipv-rank regression. ✅ 363 pass.
-- [ ] 1b/1c/2/3/4/5 pending.
+- [x] **1b** `ply-timeline.ts` `buildTimeline` (synthetic mate win%, wpLoss/moveClass, cpLoss, thinkTime, clockS, phase, criticality+rank2, decided state machine) + `engine.ts` `getGameAnalysisMultiPV`/`AnalysisRowMPV`. Tests: `ply-timeline.test.ts` (12).
+- [x] **1c** `game-metrics.ts` `buildGameMetrics` (per-phase accuracy/ACL, phase time, top-3 critical, missed conversions, tilt run+recovery, time-trouble, critical/quiet accuracy, peak/trough, out-of-book ECO fallback + post-book accuracy, opening-end eval, Spearman time-alloc, provenance). Tests: `game-metrics.test.ts` (7). ✅ 382 pass.
+- [ ] 2/3/4/5 pending.
 
 ## Context
 
