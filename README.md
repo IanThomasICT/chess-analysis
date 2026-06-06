@@ -57,6 +57,8 @@ Open `http://localhost:5173`. Vite proxies `/api/*` to Hono.
 bun run dev          # Start dev servers (Vite :5173 + Hono :3001)
 bun run build        # Production client build (Vite)
 bun run start        # Production server (NODE_ENV=production, single port)
+bun run metrics <user>            # Backfill per-game metrics for a username
+bun run explorer <dump.pgn.zst>   # (optional, manual) build the D29 opening-explorer table
 bun run typecheck    # tsc -b (incremental, cached)
 bun run lint         # ESLint with content-hash cache (<1s warm)
 bun run lint:fix     # ESLint with autofix

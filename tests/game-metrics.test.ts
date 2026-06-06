@@ -1,6 +1,9 @@
-import { describe, it, expect } from "bun:test";
+import { describe, it, expect, afterEach } from "bun:test";
+import { Database } from "bun:sqlite";
+import { existsSync, rmSync } from "node:fs";
 import { buildTimeline } from "../server/lib/ply-timeline";
 import { buildGameMetrics, type GameMetricsContext } from "../server/lib/game-metrics";
+import { setExplorerDbPath, EXPLORER_SCHEMA, EXPLORER_TABLE } from "../server/lib/explorer";
 import type { AnalysisRowMPV } from "../server/lib/engine";
 import type { PhaseBoundaries } from "../server/lib/phases";
 
@@ -108,6 +111,56 @@ describe("buildGameMetrics — phase accuracy + ACL", () => {
     expect(m.accuracyMiddlegame).not.toBeNull();
     // ACL skips the first 8 plies, so opening ACL (all ≤ ply 8) is null.
     expect(m.aclOpening).toBeNull();
+  });
+});
+
+describe("buildGameMetrics — out-of-book (explorer D29 / ECO fallback D33)", () => {
+  const EXP_DB = "test_gm_explorer.db";
+  // Real SAN so buildTimeline's moveSans are populated; fens stay synthetic
+  // (fen_0, fen_1, …) so fenKey is the bare string and seeding is predictable.
+  const PGN = "1. e4 e5 2. Nf3";
+
+  function seedExplorer(rows: Array<[string, string, number]>): void {
+    if (existsSync(EXP_DB)) {rmSync(EXP_DB);}
+    const db = new Database(EXP_DB, { create: true });
+    db.run(EXPLORER_SCHEMA);
+    const ins = db.prepare(
+      `INSERT INTO ${EXPLORER_TABLE} (fen_key, move, count) VALUES (?, ?, ?)`,
+    );
+    for (const [k, m, c] of rows) {ins.run(k, m, c);}
+    db.close();
+    setExplorerDbPath(EXP_DB);
+  }
+
+  afterEach(() => {
+    setExplorerDbPath(null);
+    if (existsSync(EXP_DB)) {rmSync(EXP_DB);}
+  });
+
+  it("flags out-of-book at ply 1 when the played move is below the frequency floor", () => {
+    seedExplorer([["fen_0", "e4", 1], ["fen_0", "d4", 99]]); // e4 = 1% < 5%
+    const tl = buildTimeline(PGN, rank1([10, -10, 10, -10]), "w", NO_PHASES);
+    const m = buildGameMetrics(tl, ctx({ pgn: PGN }));
+    expect(m.outOfBookPly).toBe(1);
+    expect(m.outOfBookEcoFallback).toBe(0);
+  });
+
+  it("scans past in-book plies to the first below-floor move", () => {
+    seedExplorer([
+      ["fen_0", "e4", 90], ["fen_0", "d4", 10], // e4 = 90% (in book)
+      ["fen_1", "e5", 2], ["fen_1", "c5", 98], // e5 = 2% < 5% at ply 2
+    ]);
+    const tl = buildTimeline(PGN, rank1([10, -10, 10, -10]), "w", NO_PHASES);
+    const m = buildGameMetrics(tl, ctx({ pgn: PGN }));
+    expect(m.outOfBookPly).toBe(2);
+    expect(m.outOfBookEcoFallback).toBe(0);
+  });
+
+  it("falls back to named-ECO (ecoFallback=1) when no explorer table exists", () => {
+    setExplorerDbPath("test_gm_missing.db"); // absent file → all lookups null
+    const tl = buildTimeline(PGN, rank1([10, -10, 10, -10]), "w", NO_PHASES);
+    const m = buildGameMetrics(tl, ctx({ pgn: PGN }));
+    expect(m.outOfBookEcoFallback).toBe(1);
   });
 });
 

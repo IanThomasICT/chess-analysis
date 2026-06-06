@@ -9,6 +9,7 @@
     "build": "vite build --config client/vite.config.ts",
     "start": "NODE_ENV=production bun server/index.ts",
     "metrics": "bun server/scripts/build-metrics.ts",
+    "explorer": "bun server/scripts/build-explorer.ts",
     "typecheck": "tsc -b",
     "lint": "eslint --cache --cache-location node_modules/.cache/eslint/ --cache-strategy content client/src/ server/ tests/ e2e/",
     "lint:fix": "eslint --cache --cache-location node_modules/.cache/eslint/ --cache-strategy content --fix client/src/ server/ tests/ e2e/",

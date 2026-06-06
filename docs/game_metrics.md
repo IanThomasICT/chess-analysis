@@ -7,6 +7,11 @@
 > (`bun run metrics <user>`), client `MetricsCard.tsx` + new `/stats` tabs. The L1→L2
 > derivation (`buildTimeline → buildGameMetrics`) is the single shared path for both
 > backfill and ongoing capture, so a backfilled and a freshly-captured game are identical.
+>
+> The Opening Explorer (D29) is also built: `server/lib/explorer.ts` +
+> `server/scripts/build-explorer.ts` (`bun run explorer <dump.pgn.zst>`). It is an
+> **optional, manual** offline build (Risk 3); until it runs, out-of-book ply degrades to
+> the named-ECO fallback (D33) with no change in output. See "Building the explorer" below.
 
 ## Purpose
 
@@ -578,7 +583,7 @@ Drift is controlled by three rules:
 | `shared/classify.ts` | `classifySwing` / `MoveClass` / thresholds — critical-move and missed-conversion classification. |
 | `server/lib/pgn.ts` | `pgnToFens`, `pgnToMoves`, `pgnHeaders`, `clkToSeconds`; **add** per-ply clock extraction + `[TimeControl]` parse. |
 | `server/lib/openings.ts` | `classifyOpening` fallback when `games.opening` is empty. Still used for `eco`/opening name (R3); out-of-book ply now comes from the explorer dump (D29), not the named-ECO prefix. |
-| `server/lib/explorer.ts` *(new)*, `server/scripts/build-explorer.ts` *(new)*, `server/data/explorer/*` *(new)* | D29 — `build-explorer.ts` streams one monthly Lichess rated dump (`database.lichess.org`), filters to the peer band (1100–2200) and first 24 plies, aggregates move frequencies into a normalized-FEN-keyed local table. `explorer.ts` exposes `positionFrequency(fenKey, move)` for the out-of-book scan, with named-ECO fallback (D33). Masters reference deferred. Static, regenerable; not part of the L0→L2 cache. |
+| `server/lib/explorer.ts`, `server/scripts/build-explorer.ts`, `server/data/explorer/explorer.db` *(gitignored, built on demand)* | **Built (D29).** `build-explorer.ts` streams one monthly Lichess rated dump (local `.pgn.zst` or `--url`), zstd-decompresses on the fly, filters to the peer band (1100–2200) + standard-only + first 24 plies, aggregates move frequencies into a normalized-FEN-keyed SQLite table (`explorer_positions(fen_key, move, count)`), then flushes the per-game metric caches for a clean recompute. `explorer.ts` exposes `positionFrequency(fenKey, move)` (lazy read-only, `null` when the table is absent) for `game-metrics.ts` `scanOutOfBook`, with named-ECO fallback (D33). Masters reference deferred. Static, regenerable; not part of the L0→L2 cache. |
 | `server/lib/phases.ts` *(new)* | Lichess Divider port — `dividePhases(fens) → { middlegameStartPly, endgameStartPly }`. |
 | `server/lib/ply-timeline.ts` *(new)* | Layer 1 — pure `buildTimeline(pgn, analysisRows) → EnrichedPly[]` shared by batch + Analysis page (D16). |
 | `server/lib/metrics-config.ts` *(new)* | Single home for all D8–D15 thresholds + `METRICS_VERSION` (D18). Adds, with shipping defaults: mate-win% decay `ε = 0.01` (D27), decided mate-hold `K = 3` plies (D28), out-of-book relative-frequency floor `X = 5%`, peer band `1100–2200`, build depth `24` plies (D29). All retunable; threshold bumps bump `METRICS_VERSION`. |
@@ -765,3 +770,33 @@ over `games` — D5), and the read-time classifications above.
 ### Phase 5 — Verify & document
 - `bun run validate` + `bun run test` green (per `AGENTS.md`).
 - Update `docs/README.md` index (this doc) and cross-link from `roadmap.md`.
+
+---
+
+## Building the explorer (D29) — optional, manual
+
+The peer-band frequency table is **not** built automatically (the dump is tens of GB and
+the build is multi-hour, Risk 3). Out-of-book ply uses the named-ECO fallback (D33) until
+you build it; building it changes nothing else.
+
+1. **Download** one monthly **standard rated** dump from
+   [`database.lichess.org`](https://database.lichess.org/) (e.g.
+   `lichess_db_standard_rated_2024-12.pgn.zst`). Pick a recent month for a current peer band.
+2. **Build** the table (keep it local; do not commit):
+   ```bash
+   bun run explorer /path/to/lichess_db_standard_rated_2024-12.pgn.zst
+   # flags: --min-elo 1100 --max-elo 2200 --max-ply 24 --min-samples 5
+   #        --out server/data/explorer/explorer.db   --url <href>   --max-games N (testing)
+   ```
+   It streams + zstd-decompresses on the fly, keeps games with both players in the band,
+   aggregates the first 24 plies into `server/data/explorer/explorer.db`, prunes positions
+   seen fewer than `--min-samples` times, then **flushes** `game_metrics_ext` + `game_metrics`.
+3. **Recompute** per-game metrics so out-of-book ply switches to the frequency signal:
+   ```bash
+   bun run metrics <username>
+   ```
+
+`out_of_book_eco_fallback = 0` on a row means the frequency table drove the cut;
+`= 1` means it fell back to the named-ECO prefix (table absent, or the line was never
+sampled). The table is regenerable any time; delete `server/data/explorer/` to revert to
+ECO-only. **Masters/theory reference is deferred** (study-surfacing, not the cutoff).

@@ -2,12 +2,16 @@ import { combineAccuracy, plyAccuracies, type PlyAccuracy } from "./metrics";
 import { isCritical, type EnrichedPly, type Phase } from "./ply-timeline";
 import { classifyOpening } from "./openings";
 import { pgnToMoves } from "./pgn";
+import { fenKey } from "./engine";
+import { positionFrequency } from "./explorer";
 import type { PhaseBoundaries } from "./phases";
 import {
   METRICS_VERSION,
   ACL_SKIP_PLIES,
   TIME_TROUBLE_MIN_S,
   TIME_TROUBLE_PCT,
+  OUT_OF_BOOK_FREQ_FLOOR,
+  OUT_OF_BOOK_MAX_PLY,
 } from "./metrics-config";
 
 /** A high-criticality user move surfaced for review / drill feed (R5/R16). */
@@ -255,6 +259,33 @@ function timeTrouble(
 }
 
 /**
+ * Out-of-book ply via the peer-band explorer (D29), ECO fallback (D33).
+ *
+ * Scans the line in order: the first ply whose played move has `< FLOOR` relative
+ * frequency is the out-of-book point (`ecoFallback = 0`). A `null` frequency means
+ * the position was never sampled — stop and keep the named-ECO depth
+ * (`ecoFallback = 1`). If the line is still in book with data through ply
+ * `OUT_OF_BOOK_MAX_PLY`, the scan stops there (D29: deeper is always out of book).
+ */
+function scanOutOfBook(
+  timeline: EnrichedPly[],
+  ecoDepth: number,
+): { outOfBookPly: number; ecoFallback: number } {
+  for (const p of timeline) {
+    if (p.plyIndex > OUT_OF_BOOK_MAX_PLY) {
+      return { outOfBookPly: OUT_OF_BOOK_MAX_PLY, ecoFallback: 0 };
+    }
+    if (p.moveSan === null) {break;}
+    const freq = positionFrequency(fenKey(p.beforeFen), p.moveSan);
+    if (freq === null) {break;}
+    if (freq < OUT_OF_BOOK_FREQ_FLOOR) {
+      return { outOfBookPly: p.plyIndex, ecoFallback: 0 };
+    }
+  }
+  return { outOfBookPly: ecoDepth, ecoFallback: 1 };
+}
+
+/**
  * Build the L2 extended metrics from an L1 timeline (pure — no DB).
  * Accuracy/ACL folds use the user's non-decided moves; ACL also skips the opening.
  */
@@ -296,7 +327,7 @@ export function buildGameMetrics(
     sans = [];
   }
   const opening = classifyOpening(sans);
-  const outOfBookPly = opening?.depth ?? 0;
+  const { outOfBookPly, ecoFallback } = scanOutOfBook(timeline, opening?.depth ?? 0);
 
   const avgThinkEntries = timeline.filter((p) => p.isUserMove && p.thinkTimeS !== null);
   const avgMoveTimeS =
@@ -337,7 +368,7 @@ export function buildGameMetrics(
     peakEvalWp: userWp.length > 0 ? Math.max(...userWp) : null,
     troughEvalWp: userWp.length > 0 ? Math.min(...userWp) : null,
     outOfBookPly,
-    outOfBookEcoFallback: 1,
+    outOfBookEcoFallback: ecoFallback,
     postBookAccuracy: accuracyWhere(entries, (p) => p.plyIndex > outOfBookPly),
     evalOpeningEndWp,
     userMoves: userEntries.length,

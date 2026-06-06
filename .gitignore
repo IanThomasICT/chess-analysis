@@ -13,6 +13,9 @@ analysis.db-*
 test_*.db
 test_*.db-*
 
+# Opening explorer table (regenerable from a Lichess dump; large)
+/server/data/explorer/
+
 # Lc0 weights
 *.pb.gz
 weights/
