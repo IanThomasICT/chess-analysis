@@ -11,7 +11,10 @@
 - [x] **1a** Lichess accuracy migration: `moveAccuracy` (exact lila constants + ≥ guard), `plyAccuracies`/`combineAccuracy` (windowed std-dev weight + weighted/harmonic mean), `gameMetrics` rewired; deleted bucket model; migration #12 (`metrics_version` + clean cutover); `METRICS_VERSION=2`; glossary reworded. Tests: metrics aggregation, migration #11/#12 schema, multipv-rank regression. ✅ 363 pass.
 - [x] **1b** `ply-timeline.ts` `buildTimeline` (synthetic mate win%, wpLoss/moveClass, cpLoss, thinkTime, clockS, phase, criticality+rank2, decided state machine) + `engine.ts` `getGameAnalysisMultiPV`/`AnalysisRowMPV`. Tests: `ply-timeline.test.ts` (12).
 - [x] **1c** `game-metrics.ts` `buildGameMetrics` (per-phase accuracy/ACL, phase time, top-3 critical, missed conversions, tilt run+recovery, time-trouble, critical/quiet accuracy, peak/trough, out-of-book ECO fallback + post-book accuracy, opening-end eval, Spearman time-alloc, provenance). Tests: `game-metrics.test.ts` (7). ✅ 382 pass.
-- [ ] 2/3/4/5 pending.
+- [x] **2a** `metrics-store.ts`: `deriveMetrics` (raw → timeline → ext), `upsertGameMetrics` (writes both `game_metrics` + `game_metrics_ext` in one tx), `isMetricsStale`/`computeAnalysisSig` (D17), `autoFeedDrill` (R40/D23 ON CONFLICT DO NOTHING), `computeAndStoreMetrics` (derive + skip-if-current + upsert + feed).
+- [x] **2b** `server/scripts/build-metrics.ts` + `bun run metrics` script: tiered MultiPV (D1), depth-gated reanalysis, SIGINT-safe per-game, `import.meta.main` guard. Pure helpers `tierMultipv`/`shouldReanalyze`/`parseArgs` tested.
+- [x] **2c** Ongoing capture: R35 hook in `analyze.ts` (best-effort, after deep loop) + lazy rebuild in `GET /games/:gameId`. Tests: `metrics-store.test.ts` (5), `build-metrics.test.ts` (9). ✅ 396 pass.
+- [ ] 3/4/5 pending.
 
 ## Context
 

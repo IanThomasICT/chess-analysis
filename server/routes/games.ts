@@ -7,6 +7,7 @@ import { isGameAnalyzed, getGameAnalysis, type AnalysisRow } from "../lib/engine
 import { parseEloHeader } from "../lib/backfill";
 import { classifyOpening } from "../lib/openings";
 import { gameMetrics } from "../lib/metrics";
+import { computeAndStoreMetrics } from "../lib/metrics-store";
 
 const BULK_COMPUTE_LIMIT = 20;
 
@@ -239,6 +240,17 @@ games.get("/games/:gameId", (c) => {
 
   const analyzed = isGameAnalyzed(gameId, fens.length);
   const analysis: AnalysisRow[] = analyzed ? getGameAnalysis(gameId) : [];
+
+  // Lazy ongoing capture (R35): if analyzed, ensure extended metrics are current.
+  // Rebuilds from existing analysis rows only — never re-runs the engine — and
+  // no-ops when the cache is already fresh. Best-effort: never fail the fetch.
+  if (analyzed) {
+    try {
+      computeAndStoreMetrics(db, gameId);
+    } catch {
+      // metrics are non-critical for the game detail response
+    }
+  }
 
   const motifRows = db
     .prepare(`SELECT move_index, tag FROM blunder_tags WHERE game_id = ?`)
