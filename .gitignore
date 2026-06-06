@@ -12,6 +12,8 @@ analysis.db
 analysis.db-*
 test_*.db
 test_*.db-*
+test.db
+test.db-*
 
 # Opening explorer table (regenerable from a Lichess dump; large)
 /server/data/explorer/

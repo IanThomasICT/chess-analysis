@@ -1,7 +1,11 @@
 import { Database, type Statement } from "bun:sqlite";
 import { pgnFinalClocks, pgnHeaders } from "./pgn";
 
-export const db = new Database("analysis.db", { create: true });
+// DB path is configurable so e2e/test runs can target an isolated file
+// (e.g. DATABASE_PATH=test.db) without touching the production analysis.db.
+export const DB_PATH = process.env.DATABASE_PATH ?? "analysis.db";
+
+export const db = new Database(DB_PATH, { create: true });
 
 // Enable WAL mode for better concurrent read/write performance
 db.run("PRAGMA journal_mode = WAL");
@@ -287,10 +291,11 @@ export const migrations: Migration[] = [
     },
   },
   {
-    // Migration #13 — non-human opponent flag + player-profile cache. `vs_bot` is
-    // nullable (NULL = unresolved); resolveBots/backfillBotFlags fill it from the
-    // Chess.com profile `status` ("computer" = bot). Gallery, bulk metrics, and the
-    // metrics batch exclude vs_bot = 1 so only games vs real people are kept.
+    // Migration #13 — non-human opponent flag. `vs_bot` marks games against
+    // Chess.com bots/coaches (1) vs real people (0). The original profile-status
+    // detection + `players` cache here was wrong (Chess.com bots report
+    // status "basic", not "computer") and is removed in #14; vs_bot now derives
+    // from the PGN `[Event]` header (see pgn.ts isBotGame).
     id: 13,
     up: (database: Database) => {
       database.run("ALTER TABLE games ADD COLUMN vs_bot INTEGER");
@@ -302,6 +307,21 @@ export const migrations: Migration[] = [
           fetched_at INTEGER NOT NULL
         )
       `);
+    },
+  },
+  {
+    // Migration #14 — purge bot/coach games and drop the defunct player cache.
+    // Bot practice games carry a PGN `[Event "Play vs …"]` header (Coach-Levy etc.).
+    // Delete them and all dependent rows so they are no longer tracked; import now
+    // skips them and isBotGame() flags any that slip through. Idempotent.
+    id: 14,
+    up: (database: Database) => {
+      const botGames = `SELECT id FROM games WHERE pgn LIKE '%[Event "Play vs %'`;
+      for (const t of ["analysis", "game_metrics", "game_metrics_ext", "blunder_tags", "drill_attempts"]) {
+        database.run(`DELETE FROM ${t} WHERE game_id IN (${botGames})`);
+      }
+      database.run(`DELETE FROM games WHERE pgn LIKE '%[Event "Play vs %'`);
+      database.run("DROP TABLE IF EXISTS players");
     },
   },
 ];

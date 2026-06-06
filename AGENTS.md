@@ -14,18 +14,28 @@ Read `docs/README.md` first. It indexes all specs with related files so you can 
 ## Commands
 
 ```bash
-bun run dev          # Start dev servers (Vite SPA on :5173 + Hono API on :3001)
+bun run dev          # Start dev servers (Vite SPA on :5173 + Hono API on :3001) — uses analysis.db
+bun run dev:e2e      # Same as dev but Hono uses test.db (run this before test:e2e)
 bun run build        # Production build (Vite client)
 bun run typecheck    # tsc -b (incremental, cached)
 bun run lint         # ESLint with content-hash cache (<1s warm)
 bun run lint:fix     # ESLint with autofix
 bun run validate     # typecheck + lint + build (~2s warm)
-bun run test         # Unit tests (bun:test, tests/ directory)
+bun run test         # Unit tests (bun:test, tests/ directory) — own :memory:/temp DBs
 bun test tests/pgn.test.ts              # Run a single unit test file
-bun run test:e2e     # Seed DB + run all e2e tests (requires dev servers running)
-bun test --timeout 30000 e2e/smoke.test.ts  # Run a single e2e file
+bun run test:db:clone # Snapshot analysis.db → test.db (VACUUM INTO; safe while metrics writes)
+bun run test:e2e     # Seed test.db + run all e2e tests (requires dev:e2e servers running)
+bun test --timeout 30000 e2e/smoke.test.ts  # Run a single e2e file (set DATABASE_PATH=test.db)
 bun run test:all     # Unit tests + e2e tests
 ```
+
+### DB isolation for tests
+
+The server DB path is configurable via `DATABASE_PATH` (default `analysis.db`, see `server/lib/db.ts`).
+`test:e2e`/`test:all` set `DATABASE_PATH=test.db` so e2e seeding never touches the production
+`analysis.db` (which a background `bun run metrics` job may be writing). Start the matching server with
+`bun run dev:e2e`. Optionally pre-populate realistic data with `bun run test:db:clone` (read-only snapshot
+of `analysis.db`). Unit tests (`tests/`) are unaffected — they construct their own `:memory:`/temp DBs.
 
 ## Architecture
 

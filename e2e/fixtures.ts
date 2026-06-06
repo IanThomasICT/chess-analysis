@@ -129,7 +129,7 @@ function syntheticAnalysisRows(pgn: string): Array<{
  * Seed the analysis.db with test games so e2e tests don't depend on Chess.com API.
  * Call this before running Playwright tests.
  */
-export function seedTestDatabase(dbPath = "analysis.db"): void {
+export function seedTestDatabase(dbPath = process.env.DATABASE_PATH ?? "analysis.db"): void {
   const db = new Database(dbPath, { create: true });
   db.run("PRAGMA journal_mode = WAL");
 
@@ -223,7 +223,7 @@ export function seedTestDatabase(dbPath = "analysis.db"): void {
 /**
  * Remove seeded test data from the database.
  */
-export function cleanTestDatabase(dbPath = "analysis.db"): void {
+export function cleanTestDatabase(dbPath = process.env.DATABASE_PATH ?? "analysis.db"): void {
   try {
     const db = new Database(dbPath, { create: false });
     db.run(`DELETE FROM analysis WHERE game_id LIKE 'e2e_game_%'`);
