@@ -73,12 +73,12 @@ Source of truth: `lichess-org/scalachess` `Divider.scala`.
 ## Requirements
 
 - **R0** — Capture metrics for **every** game belonging to the user in `games`, in
-  one re-runnable bulk backfill, persisting one `game_report` cache row per game.
-- **R35** — **Ongoing capture:** a game is folded into `game_report` the moment its
+  one re-runnable bulk backfill, persisting one `game_metrics_ext` cache row per game.
+- **R35** — **Ongoing capture:** a game is folded into `game_metrics_ext` the moment its
   analysis exists — i.e. on the analyze SSE `done` event and via a stale-check when
   the Analysis page / games list loads (Q2). No background auto-analysis and no
   manual backfill re-run; dataset completeness tracks reviewed games. Same
-  `buildGameReport` path as the bulk backfill.
+  `buildGameMetrics` path as the bulk backfill.
 - **R36** — **Capture game termination** (`[Termination]` → a `termination` column
   on `games`, classified `checkmate`/`resignation`/`timeout`/`abandoned`/
   `agreement`/`other`). Time-forfeit and abandoned games are **excluded from
@@ -104,11 +104,11 @@ Source of truth: `lichess-org/scalachess` `Divider.scala`.
   deduped against existing entries — closing the find-weakness → drill-it loop
   (Q8, D23).
 - **R41** — **Surface the dataset** through four channels (Q12): (a) a per-game
-  **report card** on the Analysis page; (b) new dataset-wide **/stats tabs**
+  **metrics card** on the Analysis page; (b) new dataset-wide **/stats tabs**
   (consistency/variance, ACL & accuracy trend, time-allocation, leak-closure,
   repertoire leaks, TPR); (c) **Home gallery enrichment** (time-trouble flag,
   result-quality, phase-weakness chips/sorts on GameCard); (d) a **CSV/JSON export**
-  of `game_report` ⋈ `games` + aggregates for backup / external analysis.
+  of `game_metrics_ext` ⋈ `games` + aggregates for backup / external analysis.
 - **R1** — Compute and store **ACL** for the user's moves (mover-perspective,
   skip first 8 plies).
 - **R2** — Compute and store **game accuracy** for the user's moves (`[0,100]`).
@@ -124,11 +124,11 @@ Source of truth: `lichess-org/scalachess` `Divider.scala`.
 - **R7** — All metrics are **user-perspective**: store `user_color` and the
   result from the user's point of view; opponent data is input only.
 - **R8** — The batch is **idempotent and resumable**: re-running skips games whose
-  report is already current, and a crash mid-run loses at most the in-flight game.
-- **R9** — Reports record **provenance**: minimum engine depth used and whether
+  metrics row is already current, and a crash mid-run loses at most the in-flight game.
+- **R9** — Metrics rows record **provenance**: minimum engine depth used and whether
   clock data was available, so partial/low-confidence games are identifiable.
 - **R10** — Games with **no clock data** (e.g. daily games, old imports) still get
-  a report; time fields are null and `clocks_available = 0` rather than failing.
+  a metrics row; time fields are null and `clocks_available = 0` rather than failing.
 - **R11** — The batch must respect existing **engine concurrency limits**
   (`MAX_CONCURRENT_ANALYSES`) and reuse the existing analysis cache — never
   re-analyze a position already cached at sufficient depth.
@@ -140,7 +140,7 @@ Source of truth: `lichess-org/scalachess` `Divider.scala`.
 
 ### Consistency & deeper-accuracy metrics
 
-Per-game diagnostic fields (stored on `game_report`):
+Per-game diagnostic fields (stored on `game_metrics_ext`):
 
 - **R13** — Capture **per-phase accuracy and ACL** for the user (opening /
   middlegame / endgame), segmented by the D0 phase boundaries — surfaces the
@@ -236,7 +236,7 @@ Cross-game aggregates (derived at read time, not stored — D7):
      (`accuracy_critical`/`accuracy_quiet` R17/R26, `critical_positions`,
      `time_alloc_efficiency` R25) are **null on fast-tier games**. Provenance must
      record `multipv_max` per game (R9); aggregates must treat those as null, not
-     zero, and report coverage (per "no silent caps"). A fast-tier game upgrades to
+     zero, and surface coverage (per "no silent caps"). A fast-tier game upgrades to
      deep — and gains the criticality metrics — when opened in Analysis.
 
 2. **A missed conversion is *not* flagged when the user's response is `best` or
@@ -250,7 +250,7 @@ Cross-game aggregates (derived at read time, not stored — D7):
      `best ∪ good`; the persisted batch definition supersedes the client rule, and
      the client should be aligned to match (see Implementation Outline P4).
 
-3. **Storage = one `game_report` row per game, treated as a regenerable cache (not
+3. **Storage = one `game_metrics_ext` row per game, treated as a regenerable cache (not
    authoritative storage).** The row holds only cross-game-queryable scalar folds;
    variable-length lists (top-3 critical, missed conversions) and the per-ply
    timeline are **derived live** from the raw layer on demand, not persisted.
@@ -260,7 +260,7 @@ Cross-game aggregates (derived at read time, not stored — D7):
      pure fold over the ply timeline (D16) and regenerated by the single-game
      endpoint, so there is no denormalized eval/SAN to drift from `analysis`.
      Cross-game "recurring mistake" queries use the existing `blunder_tags` table,
-     not stored JSON. `game_report` is now a *versioned cache* (D17), not a
+     not stored JSON. `game_metrics_ext` is now a *versioned cache* (D17), not a
      snapshot of independent truths.
 
 4. **Think time per ply is derived from `[%clk]` deltas plus the increment.** For
@@ -273,18 +273,18 @@ Cross-game aggregates (derived at read time, not stored — D7):
 5. **Elo is tracked per game as `user_elo` + `opponent_elo` + signed `elo_delta`,
    computed within each time class.** `user_elo` is denormalized from
    `games.user_elo`; `elo_delta` is filled in a second pass after all per-game
-   reports exist, sorting the user's games by `(time_class, end_time)` and diffing
+   metrics rows exist, sorting the user's games by `(time_class, end_time)` and diffing
    consecutive `user_elo`. Rationale: Chess.com ratings are per-format pools, so a
    global chronological diff would mix bullet/blitz/rapid and produce nonsense
    deltas. Storing the raw `user_elo` + per-format delta lets the client derive
    running peak, net gain, and since-date change without re-querying.
    - *History (original):* `elo_delta` filled in a stored second pass over
-     `game_report`.
+     `game_metrics_ext`.
    - *Amended (D17 drift review):* `elo_delta` is **not stored** — it is a SQL
      window (`LAG(user_elo) OVER (PARTITION BY time_class ORDER BY end_time)`) over
      `games` at read time. Removes the second pass and the drift between a stored
      delta and the underlying ratings. `user_elo`/`opponent_elo` already live in
-     `games`; nothing Elo-related needs storing in `game_report`.
+     `games`; nothing Elo-related needs storing in `game_metrics_ext`.
    - *Motivating plot (client concern, not stored):* the chart should emphasize
      progress, not noise — plot per-time-class series, overlay a **running-peak**
      line (rating never visually "loses" its high-water mark), annotate net gain
@@ -298,7 +298,7 @@ Cross-game aggregates (derived at read time, not stored — D7):
    classifier, and the engine slot guard from `server/lib`.
 
 7. **Per-game diagnostics are stored columns; cross-game aggregates (R21–R23) are
-   computed at read time over `game_report`, not stored.** Rationale: a population
+   computed at read time over `game_metrics_ext`, not stored.** Rationale: a population
    statistic (variance, percentile, by-bucket rollup) is the wrong thing to write
    onto each game row, and it shifts as games are added. The per-game inputs those
    aggregates need (`accuracy`, `opponent_elo`, `end_time`, `time_class`) are
@@ -369,7 +369,7 @@ Cross-game aggregates (derived at read time, not stored — D7):
     - *Supersedes the D2 "align the client" action:* the client no longer
       reimplements classification/missed logic — it consumes the timeline endpoint.
 
-17. **`game_report` is a versioned, non-duplicating cache (drift control — R33/R34).**
+17. **`game_metrics_ext` is a versioned, non-duplicating cache (drift control — R33/R34).**
     - Carries `metrics_version` (from the config module, D18) and an analysis
       signature (`engine_depth_min` + rank-1 row count, or a hash). A reader/builder
       recomputes the row when either differs from current — same invalidation
@@ -382,8 +382,8 @@ Cross-game aggregates (derived at read time, not stored — D7):
     - **`game_metrics` overlap — resolved (Q3): reference, don't duplicate.**
       `game_metrics` stays the single home for the shared per-side scalars
       (`accuracy`/`acl`/`blunders`/`mistakes`/`inaccuracies`, white & black);
-      `game_report` does **not** store them — it JOINs `game_metrics` and picks the
-      user side via `user_color` at read time. `game_report` stores only the *new*
+      `game_metrics_ext` does **not** store them — it JOINs `game_metrics` and picks the
+      user side via `user_color` at read time. `game_metrics_ext` stores only the *new*
       folds (per-phase, criticality, tilt, time, etc.). Both are produced from the
       same `gameMetrics`/timeline derivation in one pass with the same
       `metrics_version`, so they cannot disagree.
@@ -391,7 +391,7 @@ Cross-game aggregates (derived at read time, not stored — D7):
 18. **All thresholds live in one `server/lib/metrics-config.ts` module that owns a
     `METRICS_VERSION` constant.** D8–D15's numbers are exported from here; bumping
     any of them bumps `METRICS_VERSION`, which invalidates every cached
-    `game_report` row (D17) so no stale threshold-dependent value survives.
+    `game_metrics_ext` row (D17) so no stale threshold-dependent value survives.
     Rationale: a single, greppable place for every tunable, and an automatic,
     can't-forget cache-busting mechanism.
 
@@ -431,7 +431,7 @@ Cross-game aggregates (derived at read time, not stored — D7):
     with D21's volatility weighting (which already down-weights quiet decided
     positions); the cutoff is the harder stop. *Threshold — tunable.*
 
-23. **Auto-feed drill from critical + missed** (R40, Q8). After building a report,
+23. **Auto-feed drill from critical + missed** (R40, Q8). After building a game's metrics,
     upsert each top-3 critical move and missed conversion into `drill_attempts`
     (the BEFORE position FEN + engine best move), `INSERT … ON CONFLICT DO NOTHING`
     on `(username, game_id, move_index)` so existing FSRS state is never disturbed.
@@ -443,10 +443,10 @@ Cross-game aggregates (derived at read time, not stored — D7):
     is a secondary axis for Elo/event annotations only. Rationale: equal-sample
     points make improvement signals (R27/R28) readable regardless of play volume.
 
-25. **Re-analysis is manual/explicit** (Q10). `game_report` recomputes
+25. **Re-analysis is manual/explicit** (Q10). `game_metrics_ext` recomputes
     automatically via `metrics_version`/`analysis_sig` (D17), but re-running the
     *engine* on already-analyzed games happens only via an explicit CLI flag
-    (`build-reports --reanalyze --min-depth N`). Rationale: no surprise multi-hour
+    (`build-metrics --reanalyze --min-depth N`). Rationale: no surprise multi-hour
     CPU; the quality floor is raised deliberately. Fast-tier games still upgrade to
     deep on-open (D1).
 
@@ -468,7 +468,7 @@ authoritative; everything is regenerable (R33).
  Layer 3  Cross-game aggregates        read-time SQL/folds over Layer 2 — NEVER stored
           (R21–R23, R27–R32)           variance, trends, TPR, repertoire, by-rating
             ▲
- Layer 2  game_report (CACHE)          versioned fold of Layer 1 — stored for query speed only
+ Layer 2  game_metrics_ext (CACHE)          versioned fold of Layer 1 — stored for query speed only
           per-game scalar folds        metrics_version + analysis signature → auto-invalidate (D17)
             ▲
  Layer 1  ply timeline (EnrichedPly[]) pure fn buildTimeline(pgn, analysisRows) — NOT stored (D16)
@@ -490,26 +490,26 @@ Drift is controlled by three rules:
 
 | File | Role in this feature |
 |---|---|
-| `server/lib/db.ts` | Add `game_report` table; add `games.termination` column (R36); migrations. |
+| `server/lib/db.ts` | Add `game_metrics_ext` table; add `games.termination` column (R36); migrations. |
 | `server/lib/chesscom.ts`, `server/lib/backfill.ts` | Parse `[Termination]` on import + backfill existing rows (R36). |
 | `server/lib/engine.ts` | `analyzeGame` (deep pass + cache), `acquire/releaseAnalysisSlot`, depth provenance. |
 | `server/lib/metrics.ts` | `gameMetrics`, `cpToWinPct`, `moveAccuracy`, `classifyMove`; **migrate** accuracy to Lichess volatility-weighted + harmonic mean and **remove** `aggregateAccuracy`/`classAccuracyScore` (R38, D21); **extend** to ply ranges (R13/R19) and honor the decided-position cutoff (R39, D22). |
 | `server/routes/drill.ts`, `server/lib/db.ts` (`drill_attempts`) | Auto-feed critical + missed positions into the FSRS queue (R40, D23). |
 | `client/src/components/GameCard.tsx`, `client/src/components/StatsPanel.tsx`, `client/src/study/glossary.ts` | Surfaces showing the old bucket accuracy — update to the migrated Lichess number + glossary wording (R38). |
-| `server/routes/stats.ts` | **Add** read-time aggregate endpoints over `game_report` for R21–R23 (consistency, session fatigue, vs-opponent) — pure SQL (D7). |
+| `server/routes/stats.ts` | **Add** read-time aggregate endpoints over `game_metrics_ext` for R21–R23 (consistency, session fatigue, vs-opponent) — pure SQL (D7). |
 | `shared/classify.ts` | `classifySwing` / `MoveClass` / thresholds — critical-move and missed-conversion classification. |
 | `server/lib/pgn.ts` | `pgnToFens`, `pgnToMoves`, `pgnHeaders`, `clkToSeconds`; **add** per-ply clock extraction + `[TimeControl]` parse. |
 | `server/lib/openings.ts` | `classifyOpening` fallback when `games.opening` is empty. |
 | `server/lib/phases.ts` *(new)* | Lichess Divider port — `dividePhases(fens) → { middlegameStartPly, endgameStartPly }`. |
 | `server/lib/ply-timeline.ts` *(new)* | Layer 1 — pure `buildTimeline(pgn, analysisRows) → EnrichedPly[]` shared by batch + Analysis page (D16). |
 | `server/lib/metrics-config.ts` *(new)* | Single home for all D8–D15 thresholds + `METRICS_VERSION` (D18). |
-| `server/lib/game-report.ts` *(new)* | Layer 2 — pure `buildGameReport(timeline, gameRow) → GameReport` (folds over the timeline). |
-| `server/scripts/build-reports.ts` *(new)* | CLI batch runner (iterate user games, ensure analysis, build + upsert reports). |
+| `server/lib/game-metrics.ts` *(new)* | Layer 2 — pure `buildGameMetrics(timeline, gameRow) → GameMetrics` (folds over the timeline). |
+| `server/scripts/build-metrics.ts` *(new)* | CLI batch runner (iterate user games, ensure analysis, build + upsert metrics rows). |
 | `client/src/pages/Analysis.tsx` | Existing client-only `missedConversions` — align to D2. |
 | `client/src/components/EloTrendChart.tsx`, `server/routes/stats.ts` (`elo-trend`) | Existing Elo trend chart + endpoint — extend for the motivating plot (running peak, net-gain, streaks) using `elo_delta` (R12, D5). |
 | `lichess-org/scalachess` `Divider.scala` | Reference implementation for D0 phase division + mixedness. |
 
-### Proposed `game_report` schema (Layer 2 cache)
+### Proposed `game_metrics_ext` schema (Layer 2 cache)
 
 Stores **only** new engine-fold-derived scalars queried across games. The shared
 per-side scalars (`accuracy`/`acl`/`blunders`/`mistakes`/`inaccuracies`) are **not
@@ -571,8 +571,8 @@ over `games` — D5), and the read-time classifications above.
   definition, or do we want a depth/popularity-based book (e.g. a moves database)
   to mark the real first-novelty ply?
 - **Q15 — Read-time aggregate performance at scale.** R21–R32 run pure SQL over
-  `game_report ⋈ games ⋈ game_metrics ⋈ blunder_tags` on every dashboard load. What
-  indexes (e.g. on `games(username, time_class, end_time)`, `game_report` provenance)
+  `game_metrics_ext ⋈ games ⋈ game_metrics ⋈ blunder_tags` on every dashboard load. What
+  indexes (e.g. on `games(username, time_class, end_time)`, `game_metrics_ext` provenance)
   and/or a thin aggregate cache are needed so /stats stays fast at thousands of
   games? Currently unspecified.
 - **Q16 — Daily/correspondence clock semantics.** Daily games have no per-move
@@ -589,7 +589,7 @@ over `games` — D5), and the read-time classifications above.
 
 ### Phase 0 — Schema & primitives
 - `server/lib/metrics-config.ts`: all D8–D15/D22 thresholds + `METRICS_VERSION` (D18).
-- `db.ts` migrations: add `game_report` (incl. `metrics_version`, `analysis_sig`,
+- `db.ts` migrations: add `game_metrics_ext` (incl. `metrics_version`, `analysis_sig`,
   `multipv_max`); add `games.termination` (R36) + `games.is_standard` (R37);
   backfill both idempotently from PGN on startup.
 - `server/lib/phases.ts`: port Lichess Divider — `mm(fen)` piece count, back-rank
@@ -597,7 +597,7 @@ over `games` — D5), and the read-time classifications above.
 - Extend `pgn.ts`: `parseTimeControl`, `pgnPerPlyClocks`, `parseTermination`,
   `parseVariant`/`isStandard`.
 
-### Phase 1 — Shared timeline + report builder
+### Phase 1 — Shared timeline + metrics builder
 - `server/lib/ply-timeline.ts`: pure `buildTimeline(pgn, analysisRows) →
   EnrichedPly[]` (per-ply side/is_user/win%/wp_loss/class/think_time/phase/
   criticality + the `decided` boundary, D22) — Layer 1, shared by batch + Analysis
@@ -608,7 +608,7 @@ over `games` — D5), and the read-time classifications above.
   (R39). Add the ply-range variant of `gameMetrics` (per-phase R13, post-book R19,
   critical/quiet R17/R26). Recompute `game_metrics` under the new `METRICS_VERSION`.
   Update `tests/metrics.test.ts` + `tests/eval-logic.test.ts` to the new model.
-- `server/lib/game-report.ts`: `buildGameReport(timeline, gameRow)` combining
+- `server/lib/game-metrics.ts`: `buildGameMetrics(timeline, gameRow)` combining
   - `gameMetrics` → pick user side for ACL/accuracy/counts (R1, R2, R7),
   - phase boundaries (P0) + per-ply think time → phase time totals + avg (R4),
   - per-user-move `wp_loss` ranking → top-3 `mistake`/`blunder` + `think_time_s`
@@ -627,50 +627,50 @@ over `games` — D5), and the read-time classifications above.
   - provenance fields: `metrics_version`, `analysis_sig`, depth, clocks (R9, R10, D17).
   - *(read-time, not in the builder: `elo_delta`, `result_quality`, conversion
     flags, the critical/missed lists — D17.)*
-- Unit tests `tests/game-report.test.ts` (pure logic; fixtures with known evals +
+- Unit tests `tests/game-metrics.test.ts` (pure logic; fixtures with known evals +
   clocks; cover no-clock, short-game phase edges, no-blunder recovery=null,
   forced-move criticality).
 - Unit tests `tests/phases.test.ts` (Divider boundaries vs known positions).
 
 ### Phase 2 — Batch runner
-- `server/scripts/build-reports.ts` (`bun run server/scripts/build-reports.ts <username>`):
-  - Load all `games` for username; for each, skip if `game_report.computed_at` is
+- `server/scripts/build-metrics.ts` (`bun run server/scripts/build-metrics.ts <username>`):
+  - Load all `games` for username; for each, skip if `game_metrics_ext.computed_at` is
     newer than the game's latest analysis (R8).
   - Ensure deep analysis via `analyzeGame(..., { multipv: 3 })` honoring
     `acquire/releaseAnalysisSlot` (R1, R11, D1).
-  - Build report (timeline → folds), upsert `game_report` (`INSERT OR REPLACE`),
+  - Build metrics (timeline → folds), upsert `game_metrics_ext` (`INSERT OR REPLACE`),
     log progress (`done/total`, skipped, elapsed).
   - Skip rule uses `metrics_version` + `analysis_sig` (D17), not just existence.
   - Resumable: one game per transaction; SIGINT-safe (R8).
   - *(No Elo second pass — `elo_delta` is a read-time window, D5.)*
-- Add a `package.json` script alias (e.g. `bun run reports`).
+- Add a `package.json` script alias (e.g. `bun run metrics`).
 
-- **Drill auto-feed (R40, D23):** after each report, upsert its critical + missed
+- **Drill auto-feed (R40, D23):** after each game's metrics, upsert its critical + missed
   positions into `drill_attempts` (`ON CONFLICT DO NOTHING`).
 - Skip non-standard games (`is_standard = 0`, R37).
 
 ### Phase 2b — Ongoing capture (R35)
-- Fold a game into `game_report` as soon as its analysis exists: hook the analyze
+- Fold a game into `game_metrics_ext` as soon as its analysis exists: hook the analyze
   SSE `done` event and add a lightweight stale-check (`metrics_version`/
-  `analysis_sig`) when the Analysis page / games list loads. Same `buildGameReport`
+  `analysis_sig`) when the Analysis page / games list loads. Same `buildGameMetrics`
   path — no separate code. Drill auto-feed runs here too.
 
 ### Phase 3 — Read API (enables UI)
-- `GET /api/reports/:username` (list) + `GET /api/reports/game/:gameId` (single).
+- `GET /api/metrics/:username` (list) + `GET /api/metrics/game/:gameId` (single).
   The single-game response derives the timeline live and includes the critical/
   missed lists + read-time fields (`elo_delta`, `result_quality`, conversion flags).
-- Aggregate endpoints over `game_report` ⋈ `games` (D7, pure SQL; rolling N-game
+- Aggregate endpoints over `game_metrics_ext` ⋈ `games` (D7, pure SQL; rolling N-game
   buckets per D24; forfeit/non-standard filtered per D19/D20): consistency (R21),
   session fatigue (R22, D11), vs-opponent (R23), ACL/accuracy trend (R27),
   leak-closure over `blunder_tags` (R28), TPR (R29), repertoire leaks (R30),
   counterplay-by-rating (R31), endgame conversion (R32).
-- **Export endpoint** (R41d): CSV/JSON dump of `game_report` ⋈ `games` + aggregates.
+- **Export endpoint** (R41d): CSV/JSON dump of `game_metrics_ext` ⋈ `games` + aggregates.
 
 ### Phase 4 — Client surfacing (R41)
 - Repoint `Analysis.tsx` move colors / blunder-nav / `missedConversions` to the
   shared timeline endpoint (D16) — delete the client-side reimplementation so the
   live view and batch are guaranteed identical (supersedes the old "align to D2").
-- **Per-game report card** on Analysis (R41a): phases, time mgmt, critical moves,
+- **Per-game metrics card** on Analysis (R41a): phases, time mgmt, critical moves,
   conversion, result-quality.
 - **New /stats tabs** (R41b): consistency/variance, ACL+accuracy trend,
   time-allocation, leak-closure, repertoire leaks, TPR.
