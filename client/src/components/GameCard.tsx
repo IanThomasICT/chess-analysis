@@ -1,4 +1,7 @@
 import { Link } from "react-router";
+import { AlertTriangle, Clock, Flag } from "lucide-react";
+import { Chip, type ChipTone } from "./ui/Chip";
+import { TimeClassIcon } from "./ui/TimeClassIcon";
 
 interface GameCardProps {
   id: string;
@@ -24,60 +27,31 @@ interface GameCardProps {
   timeTroubleFlag?: boolean;
 }
 
-function accuracyColor(acc: number): string {
-  if (acc >= 90) {return "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200";}
-  if (acc >= 70) {return "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200";}
-  return "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200";
+function accuracyBarColor(acc: number): string {
+  if (acc >= 90) {return "bg-win";}
+  if (acc >= 70) {return "bg-inaccuracy";}
+  return "bg-loss";
 }
 
-function blunderColor(b: number): string {
-  if (b >= 3) {return "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200";}
-  return "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200";
+function accuracyTextColor(acc: number): string {
+  if (acc >= 90) {return "text-win";}
+  if (acc >= 70) {return "text-inaccuracy";}
+  return "text-loss";
 }
 
-const TIME_CLASS_ICONS: Record<string, string> = {
-  bullet: "🔫",
-  blitz: "⚡",
-  rapid: "🕐",
-  daily: "📅",
-};
-
-function ResultBadge({
-  result,
-  username,
-  white,
-}: {
-  result: string;
-  username: string;
-  white: string;
-}) {
+function resultInfo(
+  result: string,
+  white: string,
+  username: string,
+): { label: string; tone: ChipTone } {
   const isWhite = white.toLowerCase() === username.toLowerCase();
-  let label: string;
-  let colorClass: string;
-
   if (result === "1-0") {
-    label = isWhite ? "Win" : "Loss";
-    colorClass = isWhite
-      ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200"
-      : "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200";
-  } else if (result === "0-1") {
-    label = isWhite ? "Loss" : "Win";
-    colorClass = isWhite
-      ? "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200"
-      : "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200";
-  } else {
-    label = "Draw";
-    colorClass =
-      "bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200";
+    return isWhite ? { label: "Win", tone: "win" } : { label: "Loss", tone: "loss" };
   }
-
-  return (
-    <span
-      className={`inline-block px-2 py-0.5 rounded text-xs font-semibold ${colorClass}`}
-    >
-      {label}
-    </span>
-  );
+  if (result === "0-1") {
+    return isWhite ? { label: "Loss", tone: "loss" } : { label: "Win", tone: "win" };
+  }
+  return { label: "Draw", tone: "draw" };
 }
 
 /** Returns true if the searched user lost this game on time. */
@@ -95,7 +69,6 @@ function userLostOnTime(
   if (typeof termination === "string" && termination.toLowerCase().includes("on time")) {
     return true;
   }
-  // Fall back to clock detection if termination not present.
   const userClock = userIsWhite ? whiteClock : blackClock;
   return typeof userClock === "number" && userClock <= 0.1;
 }
@@ -133,85 +106,100 @@ export function GameCard({
   const date = new Date(endTime * 1000).toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",
-    year: "numeric",
   });
-  const icon = TIME_CLASS_ICONS[timeClass] ?? "♟️";
+  const { label: resultLabel, tone: resultTone } = resultInfo(result, white, username);
+  const lostOnTime = userLostOnTime(
+    result,
+    white,
+    username,
+    termination,
+    whiteClockFinalS,
+    blackClockFinalS,
+  );
+  const hasChips =
+    accuracy !== undefined ||
+    (blunders !== undefined && blunders > 0) ||
+    resultQuality === "swindle_win" ||
+    resultQuality === "unlucky_loss" ||
+    timeTroubleFlag === true ||
+    lostOnTime;
 
   return (
     <Link
       to={`/analysis/${id}`}
-      className="block p-4 rounded-lg border border-gray-200 dark:border-gray-700 hover:border-blue-400 dark:hover:border-blue-500 hover:shadow-md transition-all bg-white dark:bg-gray-800"
+      className="block rounded-lg border border-line bg-surface p-3 transition-all hover:border-accent hover:bg-raised"
     >
-      <div className="flex items-center justify-between mb-2">
-        <ResultBadge result={result} username={username} white={white} />
-        <span className="text-xs text-gray-500 dark:text-gray-400">
-          {icon} {timeClass}
+      <div className="mb-2 flex items-center justify-between">
+        <Chip tone={resultTone}>{resultLabel}</Chip>
+        <span className="flex items-center gap-1 text-xs capitalize text-muted">
+          <TimeClassIcon timeClass={timeClass} size={13} />
+          {timeClass}
         </span>
       </div>
-      <div className="text-sm font-medium text-gray-900 dark:text-gray-100">
-        <span className="text-white-piece">♔</span> {white}
+
+      <div className="space-y-0.5">
+        <div className="flex items-center gap-1.5 text-sm text-fg">
+          <span className="text-base leading-none">&#9812;</span>
+          <span className="truncate">{white}</span>
+        </div>
+        <div className="flex items-center gap-1.5 text-sm text-fg">
+          <span className="text-base leading-none text-muted">&#9818;</span>
+          <span className="truncate">{black}</span>
+        </div>
       </div>
-      <div className="text-sm font-medium text-gray-900 dark:text-gray-100">
-        <span className="text-black-piece">♚</span> {black}
-      </div>
-      <div className="text-xs text-gray-400 dark:text-gray-500 mt-2">
-        {date}
-      </div>
-      {(accuracy !== undefined ||
-        (blunders !== undefined && blunders > 0) ||
-        resultQuality === "swindle_win" ||
-        resultQuality === "unlucky_loss" ||
-        timeTroubleFlag === true ||
-        userLostOnTime(result, white, username, termination, whiteClockFinalS, blackClockFinalS)) && (
-        <div className="flex flex-wrap gap-1 mt-2">
-          {accuracy !== undefined && (
-            <span className={`inline-block px-2 py-0.5 rounded text-xs font-semibold ${accuracyColor(accuracy)}`}>
-              {Math.round(accuracy)}% acc
-            </span>
-          )}
+
+      {accuracy !== undefined && (
+        <div className="mt-2 flex items-center gap-2">
+          <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-raised">
+            <div
+              className={`h-full ${accuracyBarColor(accuracy)}`}
+              style={{ width: `${String(Math.round(accuracy))}%` }}
+            />
+          </div>
+          <span className={`font-mono text-xs font-semibold tabular-nums ${accuracyTextColor(accuracy)}`}>
+            {Math.round(accuracy)}%
+          </span>
+        </div>
+      )}
+
+      {hasChips && (
+        <div className="mt-2 flex flex-wrap gap-1">
           {blunders !== undefined && blunders > 0 && (
-            <span className={`inline-block px-2 py-0.5 rounded text-xs font-semibold ${blunderColor(blunders)}`}>
+            <Chip
+              tone={blunders >= 3 ? "blunder" : "mistake"}
+              icon={<AlertTriangle size={11} />}
+            >
               {blunders} blunder{blunders === 1 ? "" : "s"}
-            </span>
+            </Chip>
           )}
-          {resultQuality === "swindle_win" && (
-            <span className="inline-block px-2 py-0.5 rounded text-xs font-semibold bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200">
-              Swindle
-            </span>
-          )}
-          {resultQuality === "unlucky_loss" && (
-            <span className="inline-block px-2 py-0.5 rounded text-xs font-semibold bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">
-              Unlucky
-            </span>
-          )}
+          {resultQuality === "swindle_win" && <Chip tone="swindle">Swindle</Chip>}
+          {resultQuality === "unlucky_loss" && <Chip tone="info">Unlucky</Chip>}
           {timeTroubleFlag === true && (
-            <span
-              className="inline-block px-2 py-0.5 rounded text-xs font-semibold bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200"
-              title="Time trouble during the game"
-            >
-              ⏱ time
-            </span>
+            <Chip tone="mistake" icon={<Clock size={11} />} title="Time trouble during the game">
+              time
+            </Chip>
           )}
-          {userLostOnTime(result, white, username, termination, whiteClockFinalS, blackClockFinalS) && (
-            <span
-              className="inline-block px-2 py-0.5 rounded text-xs font-semibold bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200"
-              title="Lost on time"
-            >
-              ⏱ flag
-            </span>
+          {lostOnTime && (
+            <Chip tone="info" icon={<Flag size={11} />} title="Lost on time">
+              flag
+            </Chip>
           )}
         </div>
       )}
-      {(typeof whiteClockFinalS === "number" || typeof blackClockFinalS === "number") && (
-        <div className="text-[10px] text-gray-400 dark:text-gray-500 mt-1 flex gap-3">
-          {typeof whiteClockFinalS === "number" && (
-            <span>♔ {fmtClock(whiteClockFinalS)}</span>
-          )}
-          {typeof blackClockFinalS === "number" && (
-            <span>♚ {fmtClock(blackClockFinalS)}</span>
-          )}
-        </div>
-      )}
+
+      <div className="mt-2 flex items-center justify-between text-[11px] text-faint">
+        <span>{date}</span>
+        {(typeof whiteClockFinalS === "number" || typeof blackClockFinalS === "number") && (
+          <span className="flex gap-2 font-mono">
+            {typeof whiteClockFinalS === "number" && (
+              <span>&#9812; {fmtClock(whiteClockFinalS)}</span>
+            )}
+            {typeof blackClockFinalS === "number" && (
+              <span>&#9818; {fmtClock(blackClockFinalS)}</span>
+            )}
+          </span>
+        )}
+      </div>
     </Link>
   );
 }

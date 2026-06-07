@@ -20,6 +20,10 @@ If a proposed feature does not plausibly move one of those three numbers for **t
 4. **Cache aggressively.** Analysis is expensive (Stockfish CPU time). Re-analyzing a position is waste. Every eval is persisted to SQLite keyed by `(game_id, move_index)` and reused forever.
 5. **No premature generality.** No multi-user schema, no plugin system, no abstractions for hypothetical future games sites. If Lichess support is ever wanted, it gets added then — not designed for now.
 
+> **UI/UX vision and the design system that expresses it live in [ui-ux.md](ui-ux.md)** —
+> single committed warm-dark theme, at-a-glance / no-scroll philosophy, top-navbar app shell,
+> token-driven color, `components/ui/` primitive vocabulary. Read it before changing `client/src/`.
+
 ## Feature Alignment
 
 Each existing feature should trace back to a metric:
@@ -139,22 +143,9 @@ Game metadata from Chess.com. `id` is the numeric ID from the game URL.
 | `eco` | TEXT | ECO code parsed from PGN `[ECO]` header |
 | `opening` | TEXT | Opening name parsed from PGN `[Opening]` header |
 | `is_standard` | INTEGER | 1 = standard chess, 0 = variant; NULL = unprocessed (D20) |
-| `vs_bot` | INTEGER | 1 = opponent is a Chess.com bot, 0 = real person; NULL = unresolved. Gallery + metrics keep only real-people games (exclude `vs_bot = 1`) |
+| `vs_bot` | INTEGER | 1 = bot/coach game, 0 = real person, derived from the PGN `[Event "Play vs …"]` header (`pgn.ts` isBotGame, D35). Bot games are skipped at import and purged (migration #14), so stored rows are normally 0 |
 
 Index: `idx_games_username` on `username`.
-
-### `players`
-
-Cache of Chess.com profile `status` per opponent so bot detection (`vs_bot`) costs
-at most one profile fetch per account. Status `"computer"` ⇒ bot. Filled by
-`resolveBots` / `backfillBotFlags` in `server/lib/players.ts`.
-
-| Column | Type | Description |
-|---|---|---|
-| `username` | TEXT PK | Opponent handle (lowercased) |
-| `status` | TEXT | Raw Chess.com profile status (`basic`/`premium`/`computer`/…) |
-| `is_bot` | INTEGER NOT NULL | 1 if `status = "computer"` |
-| `fetched_at` | INTEGER NOT NULL | unix epoch (seconds) |
 
 ### `analysis`
 
@@ -270,30 +261,37 @@ Index: `idx_annotations_time_class` on `(time_class, t)`.
 ```
 client/
   src/
-    main.tsx               # ReactDOM.createRoot + providers + CSS imports
-    App.tsx                # Routes config (react-router library mode)
-    app.css                # Tailwind base + theme
+    main.tsx               # ReactDOM.createRoot + providers + CSS/font imports
+    App.tsx                # Route table — all pages nested under the AppShell layout route
+    app.css                # Tailwind v4 @theme tokens (single dark theme) + base
     api.ts                 # Typed fetch wrappers + shared interfaces
+    context/
+      Username.tsx         # UsernameProvider + useUsername() — ?username= + localStorage
+    lib/
+      theme-colors.ts      # Chart hex palette mirroring app.css tokens (uPlot can't read Tailwind)
+      classify.ts          # re-export of shared/classify
     pages/
-      Home.tsx             # Game gallery (index route)
-      Analysis.tsx         # Analysis view
-      Stats.tsx            # Tabbed dashboards (by-side / opening / rating / elo trend / accuracy trend / time-of-day / motifs / drill)
+      Home.tsx             # Game gallery (index route) — KPI band + filters + card grid
+      Analysis.tsx         # No-scroll analysis: eval bar + board + tabbed rail (Moves/Report/Engine/History)
+      Stats.tsx            # Dashboard sections (Overview / Trends / Openings / Patterns)
       Drill.tsx            # Spaced-repetition drill mode (interactive board)
       Study.tsx            # /study glossary page (in-app terminology)
     study/
       glossary.ts          # Static glossary entries
     components/
+      AppShell.tsx         # Persistent top navbar + Outlet; wraps UsernameProvider
       ChessBoard.tsx       # Chessground wrapper (React.memo)
       EvalBar.tsx          # Vertical evaluation bar (React.memo)
       EvalGraph.tsx        # uPlot canvas eval graph (React.memo)
       MoveList.tsx         # Scrollable move list with annotations (React.memo)
-      GameCard.tsx         # Gallery card; accuracy/blunder chips when metrics present
-      StatsPanel.tsx       # Home page by-side breakdown panel
-      EloTrendChart.tsx    # uPlot line chart for /stats Elo trend tab
-      RecurrencePanel.tsx  # Position-recurrence list on Analysis page
-      AlternativesPanel.tsx # Top-3 engine PVs (deep-analysis mode)
-      AccuracyTrendChart.tsx # uPlot accuracy trend on /stats page
-      GameCard.tsx         # Gallery card for a single game
+      GameCard.tsx         # Gallery card; TimeClassIcon + accuracy bar + status chips
+      StatsPanel.tsx       # Home KPI band (overall + per-side StatTiles)
+      EloTrendChart.tsx    # uPlot line chart for Stats > Trends
+      RecurrencePanel.tsx  # Position-recurrence list (Analysis rail > History)
+      AlternativesPanel.tsx # Top-3 engine PVs (Analysis rail > Engine)
+      AccuracyTrendChart.tsx # uPlot accuracy trend for Stats > Trends
+      MetricsCard.tsx      # Consolidated per-game report (Analysis rail > Report)
+      ui/                  # Shared primitives: Card, StatTile, Chip, Tabs, SegmentedControl, TimeClassIcon
 
 server/
   index.ts                 # Hono app entry (middleware, route mounting, static serve)

@@ -117,11 +117,15 @@ Source of truth: `lichess-org/scalachess` `Divider.scala`.
   deduped against existing entries — closing the find-weakness → drill-it loop
   (Q8, D23).
 - **R41** — **Surface the dataset** through four channels (Q12): (a) a per-game
-  **metrics card** on the Analysis page; (b) new dataset-wide **/stats tabs**
-  (consistency/variance, ACL & accuracy trend, time-allocation, leak-closure,
-  repertoire leaks, TPR); (c) **Home gallery enrichment** (time-trouble flag,
-  result-quality, phase-weakness chips/sorts on GameCard); (d) a **CSV/JSON export**
-  of `game_metrics_ext` ⋈ `games` + aggregates for backup / external analysis.
+  **metrics card** (`MetricsCard`) — now shown in the **Report** tab of the Analysis
+  right-hand rail (no longer stacked below the board; see [ui-ux.md](ui-ux.md)); (b)
+  dataset-wide stats (consistency/variance, ACL & accuracy trend, time-allocation,
+  leak-closure, repertoire leaks, TPR) — now grouped into the **Stats dashboard
+  sections** (Overview / Trends / Openings / Patterns) rather than flat tabs; (c)
+  **Home gallery enrichment** (time-trouble flag, result-quality chips on GameCard);
+  (d) a **CSV/JSON export** of `game_metrics_ext` ⋈ `games` + aggregates for backup /
+  external analysis. *(The metric definitions below are unchanged — only the UI
+  surfacing was reorganized in the redesign.)*
 - **R1** — Compute and store **ACL** for the user's moves (mover-perspective,
   skip first 8 plies).
 - **R2** — Compute and store **game accuracy** for the user's moves (`[0,100]`).
@@ -540,14 +544,15 @@ Cross-game aggregates (derived at read time, not stored — D7):
     rename is rare; an alias map / canonical player-id keying is deferred until a
     real rename happens.
 
-35. **Real-people games only — bots excluded from the dataset.** Only standard games
-    against human opponents are tracked. A game's opponent is classified via the
-    Chess.com profile `status` (`"computer"` = bot, cached in `players`); games against
-    bots are flagged `games.vs_bot = 1` at import and excluded from the gallery, bulk
-    metrics, and the metrics batch (which also backfills the flag for older games).
-    Unresolved opponents (`vs_bot` NULL) are kept so a network hiccup never drops a real
-    game. Rationale: bot games don't reflect performance vs people and would skew every
-    aggregate.
+35. **Real-people games only — bot/coach games are not tracked.** Only games against
+    human opponents enter the dataset. Detection is by the PGN `[Event]` header: bot
+    practice games are platform-tagged `"Play vs …"` (e.g. `"Play vs Coach"` for
+    Coach-Levy), whereas humans play `"Live Chess"`/`"Daily Chess"`/tournaments
+    (`pgn.ts` `isBotGame`). The Chess.com profile API is **not** usable here — its bots
+    report `status: "basic"`, not `"computer"`. Bot games are skipped at import (never
+    stored), purged from existing data by a migration, and `games.vs_bot` (derived from
+    the same header) is excluded everywhere as defense-in-depth. Rationale: bot games
+    don't reflect performance vs people and would skew every aggregate.
 
 34. **The bulk backfill is operationally robust** (R8 amplified). As the tool's only
     multi-hour job, it validates the engine before starting (fail fast, not on game 1),

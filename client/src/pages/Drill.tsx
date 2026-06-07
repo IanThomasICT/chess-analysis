@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, type ReactNode } from "react";
-import { Link, useSearchParams } from "react-router";
+import { Link } from "react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   fetchDrillQueue,
@@ -8,6 +8,7 @@ import {
   type AttemptResponse,
 } from "../api";
 import { ChessBoard } from "../components/ChessBoard";
+import { useUsername } from "../context/Username";
 
 interface SessionStats {
   attempted: number;
@@ -15,8 +16,7 @@ interface SessionStats {
 }
 
 export function Drill() {
-  const [searchParams] = useSearchParams();
-  const username = searchParams.get("username") ?? "";
+  const { username } = useUsername();
   const queryClient = useQueryClient();
 
   const { data: queue, isPending, isError } = useQuery({
@@ -30,7 +30,6 @@ export function Drill() {
   const [sessionStats, setSessionStats] = useState<SessionStats>({ attempted: 0, correct: 0 });
   const startTimeRef = useRef<number>(Date.now());
 
-  // Reset feedback + timer when moving to next card
   useEffect(() => {
     setFeedback(null);
     startTimeRef.current = Date.now();
@@ -51,7 +50,6 @@ export function Drill() {
         attempted: s.attempted + 1,
         correct: s.correct + (data.correct ? 1 : 0),
       }));
-      // Invalidate the queue so the next card list reflects FSRS state
       void queryClient.invalidateQueries({ queryKey: ["drill", "queue", username] });
     },
   });
@@ -59,12 +57,12 @@ export function Drill() {
   if (username === "") {
     return (
       <FullScreenMessage>
-        <p>Username required. Open Drill via the Home page after loading games.</p>
+        <p>Username required. Load games from the Games page first.</p>
       </FullScreenMessage>
     );
   }
   if (isPending) {
-    return <FullScreenMessage>Loading drill queue&#8230;</FullScreenMessage>;
+    return <FullScreenMessage>Loading drill queue…</FullScreenMessage>;
   }
   if (isError) {
     return <FullScreenMessage>Error loading drill queue.</FullScreenMessage>;
@@ -73,7 +71,7 @@ export function Drill() {
     return (
       <FullScreenMessage>
         <p className="mb-2">No drill positions available.</p>
-        <p className="text-xs text-gray-500">Analyze more games to surface blunders for review.</p>
+        <p className="text-xs text-muted">Analyze more games to surface blunders for review.</p>
       </FullScreenMessage>
     );
   }
@@ -81,13 +79,13 @@ export function Drill() {
   if (index >= queue.length) {
     return (
       <FullScreenMessage>
-        <p className="text-lg font-semibold mb-2">Session complete</p>
-        <p className="text-sm text-gray-600">{sessionStats.correct} / {sessionStats.attempted} correct</p>
+        <p className="mb-2 text-lg font-semibold text-fg">Session complete</p>
+        <p className="text-sm text-muted">{sessionStats.correct} / {sessionStats.attempted} correct</p>
         <Link
           to={`/?username=${encodeURIComponent(username)}`}
-          className="text-blue-600 hover:underline mt-2 inline-block"
+          className="mt-2 inline-block text-accent hover:text-accent-hover"
         >
-          &#8592; Back to Home
+          &larr; Back to Games
         </Link>
       </FullScreenMessage>
     );
@@ -109,74 +107,60 @@ export function Drill() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-950">
-      <header className="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 px-6 py-4">
-        <div className="max-w-7xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Link
-              to={`/?username=${encodeURIComponent(username)}`}
-              className="text-sm text-gray-500 hover:text-gray-700"
-            >
-              &#8592; Back
-            </Link>
-            <h1 className="text-xl font-bold text-gray-900 dark:text-white">Drill &#8212; {username}</h1>
-          </div>
-          <div className="text-sm text-gray-600 dark:text-gray-400">
-            {sessionStats.correct} / {sessionStats.attempted} correct &middot; card {index + 1} of {queue.length}
-          </div>
+    <div className="mx-auto max-w-3xl px-4 py-6">
+      <div className="mb-4 flex items-center justify-between">
+        <h1 className="text-xl font-bold text-fg">Drill — {username}</h1>
+        <div className="font-mono text-sm text-muted">
+          {sessionStats.correct} / {sessionStats.attempted} correct · card {index + 1} of {queue.length}
         </div>
-      </header>
+      </div>
 
-      <main className="max-w-3xl mx-auto px-6 py-6">
-        <div className="flex flex-col items-center gap-4">
-          <div className="text-sm text-gray-600 dark:text-gray-400">
-            {turn === "white" ? "White" : "Black"} to move &#8212; find the best move.
-            {card.motifs.length > 0 && (
-              <span className="ml-2 text-purple-600 dark:text-purple-300">
-                ({card.motifs.join(", ").replace(/_/g, " ")})
-              </span>
-            )}
-          </div>
-          <div className="w-full max-w-md aspect-square">
-            <ChessBoard
-              fen={card.fen}
-              interactive={feedback === null && !attempt.isPending}
-              onMove={handleMove}
-              orientation={turn}
-            />
-          </div>
-
-          {feedback !== null && (
-            <div
-              className={`p-3 rounded text-sm ${
-                feedback.correct
-                  ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200"
-                  : "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200"
-              }`}
-            >
-              {feedback.correct ? "Best move!" : `Not best &#8212; engine plays ${feedback.best_move}.`}
-            </div>
-          )}
-
-          {feedback !== null && (
-            <button
-              type="button"
-              onClick={nextCard}
-              className="px-4 py-1.5 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700"
-            >
-              Next &#8594;
-            </button>
+      <div className="flex flex-col items-center gap-4">
+        <div className="text-sm text-muted">
+          {turn === "white" ? "White" : "Black"} to move — find the best move.
+          {card.motifs.length > 0 && (
+            <span className="ml-2 text-info">
+              ({card.motifs.join(", ").replace(/_/g, " ")})
+            </span>
           )}
         </div>
-      </main>
+        <div className="aspect-square w-full max-w-md">
+          <ChessBoard
+            fen={card.fen}
+            interactive={feedback === null && !attempt.isPending}
+            onMove={handleMove}
+            orientation={turn}
+          />
+        </div>
+
+        {feedback !== null && (
+          <div
+            className={`rounded px-3 py-2 text-sm ${
+              feedback.correct ? "bg-win/15 text-win" : "bg-loss/15 text-loss"
+            }`}
+          >
+            {feedback.correct ? "Best move!" : `Not best — engine plays ${feedback.best_move}.`}
+          </div>
+        )}
+
+        {feedback !== null && (
+          <button
+            type="button"
+            onClick={nextCard}
+            className="rounded-md bg-accent px-4 py-1.5 text-sm font-medium text-on-accent hover:bg-accent-hover"
+          >
+            Next &rarr;
+          </button>
+        )}
+      </div>
     </div>
   );
 }
 
 function FullScreenMessage({ children }: { children: ReactNode }) {
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-950 flex items-center justify-center">
-      <div className="text-center text-gray-700 dark:text-gray-300">{children}</div>
+    <div className="flex h-[calc(100vh-3.5rem)] items-center justify-center">
+      <div className="text-center text-fg">{children}</div>
     </div>
   );
 }

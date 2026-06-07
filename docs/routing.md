@@ -4,17 +4,24 @@
 
 Files: `client/src/main.tsx` (router + providers), `client/src/App.tsx` (route table).
 
-The app uses **react-router v7 in library mode** (CSR, not framework mode). `main.tsx` wraps `<App />` in `<BrowserRouter>` alongside `<QueryClientProvider>` and `<StrictMode>`. `App.tsx` contains only the route table — `<Routes>` + `<Route>` elements, no router component:
+The app uses **react-router v7 in library mode** (CSR, not framework mode). `main.tsx` wraps `<App />` in `<BrowserRouter>` alongside `<QueryClientProvider>` and `<StrictMode>`. `App.tsx` contains only the route table — `<Routes>` + `<Route>` elements, no router component. All page routes are **children of a single layout route** that renders `<AppShell/>` (persistent top navbar + `UsernameProvider` + `<Outlet/>`):
+
+```tsx
+<Route element={<AppShell />}>
+  <Route path="/" element={<Home />} /> … </Route>
+```
 
 | URL Pattern | Component | Purpose |
 |---|---|---|
 | `/` | `Home` | Game gallery (index route) |
-| `/analysis/:gameId` | `Analysis` | Analysis view (deep MultiPV=3 by default) |
-| `/stats` | `Stats` | Tabbed dashboards (`?username=…`) |
+| `/analysis/:gameId` | `Analysis` | No-scroll analysis view (deep MultiPV=3 by default) |
+| `/stats` | `Stats` | Dashboard sections (`?username=…`) |
 | `/drill` | `Drill` | Spaced-repetition drill mode (`?username=…`) |
 | `/study` | `Study` | In-app glossary |
 
-There is no server-side rendering. The Vite SPA handles all routing client-side.
+Navigation between pages and the active `?username=` are owned by the navbar (see
+[ui-ux.md](ui-ux.md)); pages read the username via `useUsername()`. There is no server-side rendering —
+the Vite SPA handles all routing client-side.
 
 ## API Routes (Server)
 

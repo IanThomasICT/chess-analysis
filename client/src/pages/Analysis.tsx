@@ -3,6 +3,7 @@ import { useParams, useSearchParams, Link } from "react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { DrawShape } from "@lichess-org/chessground/draw";
 import type { Key } from "@lichess-org/chessground/types";
+import { Clock, AlertTriangle } from "lucide-react";
 import { fetchGame, fetchGameMetrics, fetchAlternatives, type AnalysisRow, type GameMove, type GameMetrics } from "../api";
 import { ChessBoard } from "../components/ChessBoard";
 import { EvalBar } from "../components/EvalBar";
@@ -11,13 +12,23 @@ import { MoveList } from "../components/MoveList";
 import { RecurrencePanel } from "../components/RecurrencePanel";
 import { AlternativesPanel } from "../components/AlternativesPanel";
 import { MetricsCard } from "../components/MetricsCard";
+import { Chip, type ChipTone } from "../components/ui/Chip";
+import { Tabs } from "../components/ui/Tabs";
 import { classifySwing, type MoveClass } from "../lib/classify";
 
-function accuracyChipClass(acc: number): string {
-  const base = "px-2 py-0.5 rounded text-xs font-semibold";
-  if (acc >= 90) {return `${base} bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200`;}
-  if (acc >= 70) {return `${base} bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200`;}
-  return `${base} bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200`;
+type RailTab = "moves" | "report" | "engine" | "history";
+
+const RAIL_TABS = [
+  { id: "moves", label: "Moves" },
+  { id: "report", label: "Report" },
+  { id: "engine", label: "Engine" },
+  { id: "history", label: "History" },
+];
+
+function accuracyTone(acc: number): ChipTone {
+  if (acc >= 90) {return "win";}
+  if (acc >= 70) {return "inaccuracy";}
+  return "loss";
 }
 
 // Stable empty arrays — avoids new references on every render when data is undefined.
@@ -93,6 +104,7 @@ export function Analysis() {
   // are visible from the moment a new game is opened, and the engine persists
   // rank 2/3 to the analysis table for later reuse.
   const [deepEnabled] = useState(true);
+  const [railTab, setRailTab] = useState<RailTab>("moves");
 
   // Seed analysis state from query data when it loads. SSE results extend this
   // array in-place, so we need state — pure derivation is not enough.
@@ -495,18 +507,18 @@ export function Analysis() {
 
   if (isPending) {
     return (
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-950 flex items-center justify-center">
-        <p className="text-gray-500 dark:text-gray-400">Loading game...</p>
+      <div className="flex h-[calc(100vh-3.5rem)] items-center justify-center">
+        <p className="text-muted">Loading game...</p>
       </div>
     );
   }
 
   if (isError || game === undefined) {
     return (
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-950 flex items-center justify-center">
+      <div className="flex h-[calc(100vh-3.5rem)] items-center justify-center">
         <div className="text-center">
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Game not found</h1>
-          <Link to="/" className="text-blue-600 hover:text-blue-700 mt-2 inline-block">
+          <h1 className="text-2xl font-bold text-fg">Game not found</h1>
+          <Link to="/" className="mt-2 inline-block text-accent hover:text-accent-hover">
             &larr; Back to home
           </Link>
         </div>
@@ -539,107 +551,66 @@ export function Analysis() {
     typeof game.termination === "string" &&
     game.termination.toLowerCase().includes("on time");
 
+  const navBtn =
+    "rounded bg-raised px-3 py-1 text-sm text-fg transition-colors hover:bg-line";
+
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-950 flex flex-col">
-      {/* Header */}
-      <header className="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 px-6 py-3">
-        <div className="max-w-7xl mx-auto flex items-center gap-4">
-          <Link
-            to="/"
-            className="text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
-          >
+    <div className="flex h-[calc(100vh-3.5rem)] flex-col overflow-hidden">
+      {/* Game header strip */}
+      <header className="shrink-0 border-b border-line bg-surface px-4 py-2">
+        <div className="mx-auto flex max-w-7xl items-center gap-3">
+          <Link to="/" className="text-sm text-muted hover:text-fg">
             &larr; Back
           </Link>
-          <div className="flex items-center gap-3 flex-1">
-            <span className="font-semibold text-gray-900 dark:text-white">
-              {game.white} vs {game.black}
-            </span>
-            <span className="text-sm px-2 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300">
-              {game.result}
-            </span>
-            <span className="text-sm text-gray-500 dark:text-gray-400">
-              {game.timeClass}
-            </span>
-            {lostOnTime && (
-              <span
-                className="text-xs px-2 py-0.5 rounded bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200"
-                title={game.termination ?? "Won on time"}
-              >
-                ⏱ on time
-              </span>
-            )}
-            {metrics !== undefined && (
-              <div className="flex items-center gap-2 text-xs">
-                <span className="text-gray-500 dark:text-gray-400">
-                  Accuracy:
-                </span>
-                <span className={accuracyChipClass(metrics.white.accuracy)}>
-                  {Math.round(metrics.white.accuracy)}% W
-                </span>
-                <span className={accuracyChipClass(metrics.black.accuracy)}>
-                  {Math.round(metrics.black.accuracy)}% B
-                </span>
-                {(metrics.white.blunders > 0 || metrics.black.blunders > 0) && (
-                  <span className="text-gray-500 dark:text-gray-400 ml-2">
-                    Blunders:
-                  </span>
-                )}
-                {metrics.white.blunders > 0 && (
-                  <span className="px-2 py-0.5 rounded bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200">
-                    🔴 {metrics.white.blunders} W
-                  </span>
-                )}
-                {metrics.black.blunders > 0 && (
-                  <span className="px-2 py-0.5 rounded bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200">
-                    🔴 {metrics.black.blunders} B
-                  </span>
-                )}
-              </div>
-            )}
-          </div>
+          <span className="font-semibold text-fg">
+            {game.white} vs {game.black}
+          </span>
+          <Chip tone="neutral">{game.result}</Chip>
+          <span className="text-sm capitalize text-muted">{game.timeClass}</span>
+          {lostOnTime && (
+            <Chip tone="info" icon={<Clock size={11} />} title={game.termination ?? "Won on time"}>
+              on time
+            </Chip>
+          )}
           {isAnalyzing && (
-            <div className="flex items-center gap-2">
+            <div className="ml-auto flex items-center gap-2">
               {phase !== null && (
-                <span className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                <span className="text-xs uppercase tracking-wide text-muted">
                   {phase === "shallow" ? "Quick scan" : "Deepening"}
                 </span>
               )}
-              <div className="w-32 h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+              <div className="h-2 w-32 overflow-hidden rounded-full bg-raised">
                 <div
-                  className={`h-full transition-all duration-300 ${phase === "shallow" ? "bg-amber-500" : "bg-blue-600"}`}
+                  className={`h-full transition-all duration-300 ${phase === "shallow" ? "bg-inaccuracy" : "bg-accent"}`}
                   style={{ width: `${progressStr}%` }}
                 />
               </div>
-              <span className="text-sm text-gray-500 dark:text-gray-400">
-                {progressStr}%
-              </span>
+              <span className="text-sm text-muted">{progressStr}%</span>
             </div>
           )}
         </div>
       </header>
 
-      {/* Main content */}
-      <main className="flex-1 max-w-7xl mx-auto w-full px-6 py-4">
-        <div className="grid grid-cols-[auto_1fr_280px] gap-4 h-[min(calc(100vh-200px),600px)]">
+      {/* No-scroll main: eval bar | board column | tabbed rail */}
+      <div className="mx-auto min-h-0 w-full max-w-7xl flex-1 px-4 py-3">
+        <div className="grid h-full grid-cols-[auto_1fr_360px] gap-4">
           {/* Eval Bar */}
-          <div className="w-8">
+          <div className="h-full w-8">
             <EvalBar score={currentScore} scoreMate={currentMate} orientation={orientation} />
           </div>
 
-          {/* Board with player names */}
-          <div className="flex flex-col h-full min-w-0">
+          {/* Board column */}
+          <div className="flex min-w-0 flex-col gap-2">
             {/* Top player */}
-            <div className="flex items-center gap-2 py-1">
-              <div className={`w-3 h-3 rounded-full border border-gray-400 shrink-0 ${topIsBlack ? "bg-gray-800" : "bg-white"}`} />
-              <span className={`text-sm truncate ${isSearchedUserTop ? "font-semibold text-gray-900 dark:text-white" : "text-gray-600 dark:text-gray-400"}`}>
+            <div className="flex shrink-0 items-center gap-2">
+              <div className={`h-3 w-3 shrink-0 rounded-full border border-line ${topIsBlack ? "bg-canvas" : "bg-fg"}`} />
+              <span className={`truncate text-sm ${isSearchedUserTop ? "font-semibold text-fg" : "text-muted"}`}>
                 {topPlayerName}
               </span>
               {typeof topClock === "number" && (
                 <span
-                  className={`ml-auto text-xs font-mono px-1.5 py-0.5 rounded ${
-                    topClock <= 0.1
-                      ? "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200"
-                      : "text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-800"
+                  className={`ml-auto rounded px-1.5 py-0.5 font-mono text-xs ${
+                    topClock <= 0.1 ? "bg-loss/15 text-loss" : "bg-raised text-muted"
                   }`}
                   title={topClock <= 0.1 ? "Flagged — ran out of time" : "Final clock"}
                 >
@@ -647,24 +618,22 @@ export function Analysis() {
                 </span>
               )}
             </div>
-            {/* Chessground Board */}
-            <div className="flex-1 min-h-0 flex items-center justify-center">
+            {/* Board */}
+            <div className="flex min-h-0 flex-1 items-center justify-center">
               <div className="aspect-square h-full max-w-full">
                 <ChessBoard fen={fens[currentMove]} lastMove={lastMove} autoShapes={bestMoveShapes} orientation={orientation} />
               </div>
             </div>
             {/* Bottom player */}
-            <div className="flex items-center gap-2 py-1">
-              <div className={`w-3 h-3 rounded-full border border-gray-400 shrink-0 ${topIsBlack ? "bg-white" : "bg-gray-800"}`} />
-              <span className={`text-sm truncate ${isSearchedUserBottom ? "font-semibold text-gray-900 dark:text-white" : "text-gray-600 dark:text-gray-400"}`}>
+            <div className="flex shrink-0 items-center gap-2">
+              <div className={`h-3 w-3 shrink-0 rounded-full border border-line ${topIsBlack ? "bg-fg" : "bg-canvas"}`} />
+              <span className={`truncate text-sm ${isSearchedUserBottom ? "font-semibold text-fg" : "text-muted"}`}>
                 {bottomPlayerName}
               </span>
               {typeof bottomClock === "number" && (
                 <span
-                  className={`ml-auto text-xs font-mono px-1.5 py-0.5 rounded ${
-                    bottomClock <= 0.1
-                      ? "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200"
-                      : "text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-800"
+                  className={`ml-auto rounded px-1.5 py-0.5 font-mono text-xs ${
+                    bottomClock <= 0.1 ? "bg-loss/15 text-loss" : "bg-raised text-muted"
                   }`}
                   title={bottomClock <= 0.1 ? "Flagged — ran out of time" : "Final clock"}
                 >
@@ -672,153 +641,110 @@ export function Analysis() {
                 </span>
               )}
             </div>
+
+            {/* Eval graph strip */}
+            {evalData.length > 0 && (
+              <div className="h-24 shrink-0 rounded-lg border border-line bg-surface p-2">
+                <EvalGraph data={evalData} currentMove={currentMove} onSelectMove={setCurrentMove} />
+              </div>
+            )}
+
+            {/* Move navigation */}
+            <div className="flex shrink-0 items-center justify-center gap-2">
+              <button type="button" onClick={() => setCurrentMove(0)} className={navBtn}>&laquo;</button>
+              <button type="button" onClick={() => setCurrentMove(Math.max(0, currentMove - 1))} className={navBtn}>&lsaquo;</button>
+              <span className="min-w-[80px] text-center font-mono text-sm text-muted">
+                {currentMove} / {maxMove}
+              </span>
+              <button type="button" onClick={() => setCurrentMove(Math.min(maxMove, currentMove + 1))} className={navBtn}>&rsaquo;</button>
+              <button type="button" onClick={() => setCurrentMove(maxMove)} className={navBtn}>&raquo;</button>
+              <div className="mx-1 h-5 w-px bg-line" />
+              <button type="button" onClick={() => setUserFlipped((f) => !f)} className={navBtn} title="Flip board">&#x21C5;</button>
+            </div>
+
+            {/* Blunder / Mistake / Missed jump nav (user moves only) */}
+            {moveClassifications.length > 0 && (
+              <div className="flex shrink-0 flex-wrap items-center justify-center gap-2">
+                <button type="button" onClick={() => { goToPrev("blunder"); }} className="rounded bg-blunder/15 px-2 py-1 text-xs font-semibold text-blunder" title="Previous blunder (Shift+B) — my moves only">&larr; Blunder</button>
+                <button type="button" onClick={() => { goToNext("blunder"); }} className="rounded bg-blunder/15 px-2 py-1 text-xs font-semibold text-blunder" title="Next blunder (B) — my moves only">Blunder &rarr;</button>
+                <button type="button" onClick={() => { goToPrev("mistake"); }} className="rounded bg-mistake/15 px-2 py-1 text-xs font-semibold text-mistake" title="Previous mistake (Shift+M) — my moves only">&larr; Mistake</button>
+                <button type="button" onClick={() => { goToNext("mistake"); }} className="rounded bg-mistake/15 px-2 py-1 text-xs font-semibold text-mistake" title="Next mistake (M) — my moves only">Mistake &rarr;</button>
+                <button type="button" onClick={goToPrevMissed} className="rounded bg-inaccuracy/15 px-2 py-1 text-xs font-semibold text-inaccuracy" title="Previous missed conversion (Shift+X) — opponent blundered, I didn't punish">&larr; Missed</button>
+                <button type="button" onClick={goToNextMissed} className="rounded bg-inaccuracy/15 px-2 py-1 text-xs font-semibold text-inaccuracy" title="Next missed conversion (X) — opponent blundered, I didn't punish">Missed &rarr;</button>
+              </div>
+            )}
           </div>
 
-          {/* Move List */}
-          <div className="overflow-y-auto border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800">
-            <MoveList
-              moves={moveSans}
-              currentMove={currentMove}
-              onSelectMove={setCurrentMove}
-              classifications={moveClassifications}
-              motifs={data.motifs}
-              missedConversions={missedConversions}
-              userIsWhite={userIsWhite}
+          {/* Tabbed rail */}
+          <div className="flex min-h-0 flex-col overflow-hidden rounded-lg border border-line bg-surface">
+            <Tabs
+              tabs={RAIL_TABS}
+              active={railTab}
+              onChange={(id) => { setRailTab(id as RailTab); }}
+              className="shrink-0"
             />
+
+            {railTab === "moves" && (
+              <div className="flex min-h-0 flex-1 flex-col">
+                {metrics !== undefined && (
+                  <div className="flex shrink-0 flex-wrap items-center gap-1.5 border-b border-line p-2 text-xs">
+                    <span className="text-muted">Acc</span>
+                    <Chip tone={accuracyTone(metrics.white.accuracy)}>{Math.round(metrics.white.accuracy)}% W</Chip>
+                    <Chip tone={accuracyTone(metrics.black.accuracy)}>{Math.round(metrics.black.accuracy)}% B</Chip>
+                    {metrics.white.blunders > 0 && (
+                      <Chip tone="blunder" icon={<AlertTriangle size={11} />}>{metrics.white.blunders} W</Chip>
+                    )}
+                    {metrics.black.blunders > 0 && (
+                      <Chip tone="blunder" icon={<AlertTriangle size={11} />}>{metrics.black.blunders} B</Chip>
+                    )}
+                  </div>
+                )}
+                <div className="min-h-0 flex-1 overflow-y-auto">
+                  <MoveList
+                    moves={moveSans}
+                    currentMove={currentMove}
+                    onSelectMove={setCurrentMove}
+                    classifications={moveClassifications}
+                    motifs={data.motifs}
+                    missedConversions={missedConversions}
+                    userIsWhite={userIsWhite}
+                  />
+                </div>
+              </div>
+            )}
+
+            {railTab === "report" && (
+              <div className="min-h-0 flex-1 overflow-y-auto p-3">
+                <MetricsCard gameId={game.id} />
+              </div>
+            )}
+
+            {railTab === "engine" && (
+              <div className="min-h-0 flex-1 overflow-y-auto p-3">
+                <AlternativesPanel
+                  gameId={game.id}
+                  moveIndex={currentMove}
+                  playedMove={moves[currentMove - 1]?.san}
+                />
+              </div>
+            )}
+
+            {railTab === "history" && (
+              <div className="min-h-0 flex-1 overflow-y-auto p-3">
+                {analyzed && currentMove < fens.length ? (
+                  <RecurrencePanel
+                    fen={fens[currentMove]}
+                    username={game.username}
+                    currentGameId={game.id}
+                  />
+                ) : (
+                  <p className="text-sm text-muted">No position history available.</p>
+                )}
+              </div>
+            )}
           </div>
         </div>
-
-        {/* Eval Graph */}
-        {evalData.length > 0 && (
-          <div className="mt-4 h-40 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-2">
-            <EvalGraph
-              data={evalData}
-              currentMove={currentMove}
-              onSelectMove={setCurrentMove}
-            />
-          </div>
-        )}
-
-        {/* Move navigation controls */}
-        <div className="mt-3 flex items-center justify-center gap-2">
-          <button
-            type="button"
-            onClick={() => setCurrentMove(0)}
-            className="px-3 py-1 text-sm rounded bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300"
-          >
-            &laquo;
-          </button>
-          <button
-            type="button"
-            onClick={() => setCurrentMove(Math.max(0, currentMove - 1))}
-            className="px-3 py-1 text-sm rounded bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300"
-          >
-            &lsaquo;
-          </button>
-          <span className="text-sm text-gray-500 dark:text-gray-400 min-w-[80px] text-center">
-            {currentMove} / {maxMove}
-          </span>
-          <button
-            type="button"
-            onClick={() => setCurrentMove(Math.min(maxMove, currentMove + 1))}
-            className="px-3 py-1 text-sm rounded bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300"
-          >
-            &rsaquo;
-          </button>
-          <button
-            type="button"
-            onClick={() => setCurrentMove(maxMove)}
-            className="px-3 py-1 text-sm rounded bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300"
-          >
-            &raquo;
-          </button>
-          <div className="w-px h-5 bg-gray-300 dark:bg-gray-600 mx-1" />
-          <button
-            type="button"
-            onClick={() => setUserFlipped((f) => !f)}
-            className="px-3 py-1 text-sm rounded bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300"
-            title="Flip board"
-          >
-            &#x21C5;
-          </button>
-        </div>
-
-        {/* Blunder / Mistake / Missed navigation — only counts user's moves.
-            Missed = opponent blundered, user failed to play near-best response. */}
-        {moveClassifications.length > 0 && (
-          <div className="mt-2 flex items-center justify-center gap-2">
-            <button
-              type="button"
-              onClick={() => { goToPrev("blunder"); }}
-              className="px-2 py-1 text-xs rounded bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200"
-              title="Previous blunder (Shift+B) — my moves only"
-            >
-              &larr; Blunder
-            </button>
-            <button
-              type="button"
-              onClick={() => { goToNext("blunder"); }}
-              className="px-2 py-1 text-xs rounded bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200"
-              title="Next blunder (B) — my moves only"
-            >
-              Blunder &rarr;
-            </button>
-            <button
-              type="button"
-              onClick={() => { goToPrev("mistake"); }}
-              className="px-2 py-1 text-xs rounded bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200"
-              title="Previous mistake (Shift+M) — my moves only"
-            >
-              &larr; Mistake
-            </button>
-            <button
-              type="button"
-              onClick={() => { goToNext("mistake"); }}
-              className="px-2 py-1 text-xs rounded bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200"
-              title="Next mistake (M) — my moves only"
-            >
-              Mistake &rarr;
-            </button>
-            <button
-              type="button"
-              onClick={goToPrevMissed}
-              className="px-2 py-1 text-xs rounded bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200"
-              title="Previous missed conversion (Shift+X) — opponent blundered, I didn't punish"
-            >
-              &larr; Missed
-            </button>
-            <button
-              type="button"
-              onClick={goToNextMissed}
-              className="px-2 py-1 text-xs rounded bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200"
-              title="Next missed conversion (X) — opponent blundered, I didn't punish"
-            >
-              Missed &rarr;
-            </button>
-          </div>
-        )}
-
-        {/* Recurrence Panel — shows prior games where this position was reached */}
-        {analyzed && currentMove < fens.length && (
-          <RecurrencePanel
-            fen={fens[currentMove]}
-            username={game.username}
-            currentGameId={game.id}
-          />
-        )}
-
-        {/* Alternatives Panel — top engine lines for the current position (deep analysis) */}
-        {deepEnabled && (
-          <AlternativesPanel
-            gameId={game.id}
-            moveIndex={currentMove}
-            playedMove={moves[currentMove - 1]?.san}
-          />
-        )}
-
-        {/* Extended game metrics — supplementary card, renders nothing until metrics exist */}
-        <MetricsCard gameId={game.id} />
-      </main>
+      </div>
     </div>
   );
 }

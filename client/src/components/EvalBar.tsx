@@ -35,7 +35,7 @@ export const EvalBar = memo(function EvalBar({ score, scoreMate, orientation = "
   const bottomPos = String(100 - boundary + 2);
 
   return (
-    <div className="w-full h-full flex flex-col rounded overflow-hidden border border-gray-300 dark:border-gray-600 relative">
+    <div className="relative flex h-full w-full flex-col overflow-hidden rounded border border-line">
       {/* Top section */}
       <div
         className={`${topBg} transition-all duration-300 ease-out`}

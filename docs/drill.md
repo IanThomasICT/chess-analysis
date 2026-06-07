@@ -44,7 +44,12 @@ FSRS rating mapping (DESIGN D10 / `ts-fsrs` defaults):
 
 ## UI
 
-`/drill?username=…` shows one card at a time. The `ChessBoard` is `interactive` while no feedback is shown. On legal move drop, `onMove(orig, dest)` builds UCI and submits via `useMutation(submitDrillAttempt)`. Feedback banner shows correct/incorrect + engine's best move; "Next →" advances. Session stats (correct / attempted, card N of M) render in the header. Board orientation follows `fen` side-to-move so the user always sees pieces "from their side".
+`/drill?username=…` shows one card at a time. Username comes from `useUsername()`; navigation lives in the
+shared top navbar. The `ChessBoard` is `interactive` while no feedback is shown. On legal move drop,
+`onMove(orig, dest)` builds UCI and submits via `useMutation(submitDrillAttempt)`. Feedback banner
+(tone-colored win/loss) shows correct/incorrect + engine's best move; "Next →" advances. Session stats
+(correct / attempted, card N of M) render in a compact page strip. Board orientation follows `fen`
+side-to-move so the user always sees pieces "from their side".
 
 ## Dependency
 

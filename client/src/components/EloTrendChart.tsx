@@ -1,6 +1,7 @@
 import { memo, useEffect, useRef } from "react";
 import uPlot from "uplot";
 import type { EloTrendPoint } from "../api";
+import { CHART } from "../lib/theme-colors";
 
 interface Props {
   data: EloTrendPoint[];
@@ -66,14 +67,14 @@ export const EloTrendChart = memo(function EloTrendChart({ data }: Props) {
             scales: { x: { time: true } },
             axes: [
               {
-                stroke: "#888",
+                stroke: CHART.axis,
                 font: "10px system-ui, sans-serif",
                 grid: { stroke: "rgba(128,128,128,0.15)", width: 1 },
                 ticks: { show: false },
               },
               {
                 label: "Rating",
-                stroke: "#888",
+                stroke: CHART.axis,
                 font: "10px system-ui, sans-serif",
                 size: 48,
                 grid: { stroke: "rgba(128,128,128,0.15)", width: 1 },
@@ -82,10 +83,10 @@ export const EloTrendChart = memo(function EloTrendChart({ data }: Props) {
             ],
             series: [
               {},
-              { label: "Elo", stroke: "#3b82f6", width: 2, points: { show: false } },
+              { label: "Elo", stroke: CHART.accent, width: 2, points: { show: false } },
               {
                 label: "Peak",
-                stroke: "rgba(251,191,36,0.5)",
+                stroke: "rgba(214,182,86,0.55)",
                 width: 1.5,
                 dash: [4, 4],
                 points: { show: false },
@@ -119,15 +120,15 @@ export const EloTrendChart = memo(function EloTrendChart({ data }: Props) {
   const summary = computeSummary(data);
 
   function netGainColorClass(netGain: number): string {
-    if (netGain > 0) {return "font-semibold text-green-600 dark:text-green-400";}
-    if (netGain < 0) {return "font-semibold text-red-600 dark:text-red-400";}
-    return "font-semibold text-gray-700 dark:text-gray-300";
+    if (netGain > 0) {return "font-semibold text-win";}
+    if (netGain < 0) {return "font-semibold text-loss";}
+    return "font-semibold text-muted";
   }
 
   return (
     <div>
       {summary !== null && (
-        <div className="flex gap-4 mb-1 text-xs text-gray-500 dark:text-gray-400">
+        <div className="mb-1 flex gap-4 text-xs text-muted">
           <span>
             Net gain:{" "}
             <span className={netGainColorClass(summary.netGain)}>
@@ -137,13 +138,13 @@ export const EloTrendChart = memo(function EloTrendChart({ data }: Props) {
           </span>
           <span>
             Peak:{" "}
-            <span className="font-semibold text-amber-500 dark:text-amber-400">
+            <span className="font-semibold text-inaccuracy">
               {String(summary.peak)}
             </span>
           </span>
         </div>
       )}
-      <div ref={containerRef} className="w-full h-64" />
+      <div ref={containerRef} className="h-64 w-full" />
     </div>
   );
 });
