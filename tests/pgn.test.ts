@@ -1,5 +1,5 @@
 import { describe, it, expect } from "bun:test";
-import { pgnToFens, pgnToMoves, getGameResult, pgnHeaders } from "../server/lib/pgn";
+import { pgnToFens, pgnToMoves, getGameResult, pgnHeaders, isBotGame } from "../server/lib/pgn";
 
 // ---------- sample PGNs ----------
 
@@ -242,6 +242,21 @@ describe("pgnHeaders", () => {
     const pgn = '[Key ""]\n\n1. e4 *';
     const headers = pgnHeaders(pgn);
     expect(headers.Key).toBe("");
+  });
+});
+
+describe("isBotGame", () => {
+  it("flags 'Play vs …' practice events as bot games", () => {
+    expect(isBotGame('[Event "Play vs Coach"]\n\n1. e4 e5 1-0')).toBe(true);
+    expect(isBotGame('[Event "Play vs Computer"]\n\n1. e4 *')).toBe(true);
+    expect(isBotGame('[Event "play vs coach"]\n\n1. e4 *')).toBe(true); // case-insensitive
+  });
+
+  it("treats human/tournament events as real games", () => {
+    expect(isBotGame('[Event "Live Chess"]\n\n1. e4 e5 1-0')).toBe(false);
+    expect(isBotGame('[Event "Daily Chess"]\n\n1. e4 *')).toBe(false);
+    expect(isBotGame('[Event "Titled Tuesday Blitz"]\n\n1. e4 *')).toBe(false);
+    expect(isBotGame("1. e4 e5")).toBe(false); // no Event header
   });
 });
 

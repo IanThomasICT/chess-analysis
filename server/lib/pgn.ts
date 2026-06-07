@@ -193,6 +193,21 @@ export function parseVariant(pgn: string): string | null {
 }
 
 /**
+ * Whether a game was played against a Chess.com bot/coach rather than a real person.
+ *
+ * Chess.com bot accounts are NOT flagged in the public profile API (e.g. `Coach-Levy`
+ * reports `status: "basic"`, like any human), so the reliable signal is the PGN
+ * `[Event]` header: practice games against bots are platform-tagged `"Play vs Coach"`,
+ * `"Play vs Computer"`, etc. — the `"Play vs "` prefix. Human games use `"Live Chess"`,
+ * `"Daily Chess"`, or a tournament name. Matched case-insensitively. *Tunable.*
+ */
+export function isBotGame(pgn: string): boolean {
+  const event = pgnHeaders(pgn).Event;
+  if (event === undefined) {return false;}
+  return /^play vs /i.test(event.trim());
+}
+
+/**
  * Whether a game is standard chess (R37/D20).
  * False if a non-Standard `[Variant]` is present, or `rules` is anything but "chess".
  * `rules` is the Chess.com PubAPI field ("chess", "chess960", "bughouse", …).

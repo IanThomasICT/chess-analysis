@@ -21,33 +21,6 @@ export interface ChessComGame {
   };
 }
 
-export interface ChessComProfile {
-  username: string;
-  /** Account status; "computer" identifies a bot. Other values: basic/premium/staff/… */
-  status: string;
-}
-
-/**
- * Fetch a player's public profile. Used to tell bots ("computer" status) from
- * real people. Returns null on any non-OK response or malformed handle so callers
- * can leave the opponent unresolved and retry later rather than misclassifying.
- */
-export async function fetchPlayerProfile(
-  username: string,
-): Promise<ChessComProfile | null> {
-  if (!/^[a-zA-Z0-9_-]{1,50}$/.test(username)) {
-    return null;
-  }
-  const r = await fetch(`https://api.chess.com/pub/player/${username}`, {
-    headers: { "User-Agent": USER_AGENT },
-  });
-  if (!r.ok) {
-    return null;
-  }
-  const data = (await r.json()) as { username?: string; status?: string };
-  return { username: data.username ?? username, status: data.status ?? "" };
-}
-
 export async function fetchArchives(username: string): Promise<string[]> {
   const r = await fetch(
     `https://api.chess.com/pub/player/${username}/games/archives`,

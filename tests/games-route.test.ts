@@ -123,10 +123,10 @@ describe("buildGameRow", () => {
     expect(row.username).toBe("alice");
   });
 
-  test("vs_bot reflects the resolved opponent flag (default unresolved = null)", () => {
-    expect(buildGameRow("alice", makeGame()).vs_bot).toBeNull();
-    expect(buildGameRow("alice", makeGame(), true).vs_bot).toBe(1);
-    expect(buildGameRow("alice", makeGame(), false).vs_bot).toBe(0);
+  test("vs_bot is derived from the PGN [Event] header", () => {
+    expect(buildGameRow("alice", makeGame()).vs_bot).toBe(0); // "Live Chess"
+    const botPgn = FULL_PGN.replace('[Event "Live Chess"]', '[Event "Play vs Coach"]');
+    expect(buildGameRow("alice", makeGame({ pgn: botPgn })).vs_bot).toBe(1);
   });
 
   test("white wins → result is '1-0'", () => {

@@ -17,7 +17,6 @@ import {
   spawnEngine,
 } from "../lib/engine";
 import { computeAndStoreMetrics, metricsAreFresh } from "../lib/metrics-store";
-import { backfillBotFlags } from "../lib/players";
 import { RECENT_TIER_GAMES, RECENT_TIER_MONTHS } from "../lib/metrics-config";
 
 const DEFAULT_MIN_DEPTH = 12;
@@ -175,18 +174,9 @@ function fmtElapsed(startMs: number): string {
 let interrupted = false;
 
 async function run(args: CliArgs): Promise<RunSummary> {
-  // Resolve any unknown opponents so bot games are excluded below (best-effort —
-  // a network failure leaves vs_bot NULL and the game is still processed).
-  try {
-    const flagged = await backfillBotFlags(args.username);
-    if (flagged > 0) {console.log(`Resolved bot flags for ${String(flagged)} game(s).`);}
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.warn(`Bot-flag resolution skipped (${msg}).`);
-  }
-
   // Newest-first (latest → oldest); the recency tier (D1) keys off this order.
-  // vs_bot IS NOT 1 keeps real-people + unresolved games, skips known bots.
+  // Bot/coach games are purged at startup (migration) and skipped at import, so
+  // vs_bot IS NOT 1 is belt-and-suspenders against any that slip through.
   const games = db
     .prepare(
       `SELECT id, pgn, end_time FROM games

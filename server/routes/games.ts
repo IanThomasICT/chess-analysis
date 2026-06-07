@@ -2,8 +2,7 @@ import { Hono } from "hono";
 import type { Database } from "bun:sqlite";
 import { db } from "../lib/db";
 import { fetchRecentGames, type ChessComGame } from "../lib/chesscom";
-import { resolveBots } from "../lib/players";
-import { pgnToFens, pgnToMoves, pgnHeaders, pgnFinalClocks, isStandard } from "../lib/pgn";
+import { pgnToFens, pgnToMoves, pgnHeaders, pgnFinalClocks, isStandard, isBotGame } from "../lib/pgn";
 import { isGameAnalyzed, getGameAnalysis, type AnalysisRow } from "../lib/engine";
 import { parseEloHeader } from "../lib/backfill";
 import { classifyOpening } from "../lib/openings";
@@ -67,24 +66,13 @@ export interface GameRowData {
   black_clock_final_s: number | null;
   termination: string | null;
   is_standard: number;
-  vs_bot: number | null;
+  vs_bot: number;
 }
 
-/** The opponent's username — whichever side is not the requesting user. */
-export function opponentUsername(username: string, g: ChessComGame): string {
-  return username.toLowerCase() === g.white.username.toLowerCase()
-    ? g.black.username
-    : g.white.username;
-}
-
-/**
- * Build a fully-populated game row from a ChessComGame and the requesting username.
- * `vsBot` is the opponent's resolved bot status (null = unresolved → stored NULL).
- */
+/** Build a fully-populated game row from a ChessComGame and the requesting username. */
 export function buildGameRow(
   username: string,
   g: ChessComGame,
-  vsBot: boolean | null = null,
 ): GameRowData {
   const gameId = g.url.split("/").pop() ?? g.url;
 
@@ -121,10 +109,6 @@ export function buildGameRow(
 
   const clocks = pgnFinalClocks(g.pgn);
   const termination = normalizeHeader(h.Termination);
-  let vsBotFlag: number | null = null;
-  if (vsBot !== null) {
-    vsBotFlag = vsBot ? 1 : 0;
-  }
 
   return {
     id: gameId,
@@ -144,7 +128,7 @@ export function buildGameRow(
     black_clock_final_s: clocks.black,
     termination,
     is_standard: isStandard(g.pgn, g.rules) ? 1 : 0,
-    vs_bot: vsBotFlag,
+    vs_bot: isBotGame(g.pgn) ? 1 : 0,
   };
 }
 
@@ -177,12 +161,6 @@ games.get("/games", async (c) => {
   try {
     const chessComGames = await fetchRecentGames(username, FETCH_MONTHS);
 
-    // Resolve opponents to bots vs real people (cached; only new accounts hit the
-    // network) so each row records whether it was played against a bot.
-    const botMap = await resolveBots(
-      chessComGames.map((g) => opponentUsername(username, g)),
-    );
-
     const upsert = db.prepare(`
       INSERT OR REPLACE INTO games
         (id, username, pgn, white, black, result, time_class, end_time,
@@ -193,9 +171,9 @@ games.get("/games", async (c) => {
 
     const upsertMany = db.transaction((gamesToUpsert: ChessComGame[]) => {
       for (const g of gamesToUpsert) {
-        const opp = opponentUsername(username, g).toLowerCase();
-        const resolvedBot = botMap.get(opp);
-        const row = buildGameRow(username, g, resolvedBot ?? null);
+        // Skip games against bots/coaches entirely — real people only.
+        if (isBotGame(g.pgn)) {continue;}
+        const row = buildGameRow(username, g);
         upsert.run(
           row.id,
           row.username,
