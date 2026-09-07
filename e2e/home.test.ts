@@ -15,7 +15,6 @@ afterAll(() => {
 
 // Helper: reset all client-side filters to default state.
 async function resetFilters(page: Page) {
-  await page.getByPlaceholder("Search by opponent...").clear();
   await page.getByRole("group", { name: "Time class" }).getByRole("button", { name: "All" }).click();
   await page.getByRole("group", { name: "Result" }).getByRole("button", { name: "All" }).click();
   // Wait for all 3 cards to be visible after clearing filters
@@ -37,17 +36,17 @@ describe("home page", () => {
     expect(await brand.textContent()).toContain("Chess Analyzer");
   });
 
-  test("shows the username input and Load button", async () => {
+  test("settings modal exposes the username input and Save button", async () => {
     const page = getPage();
+    await page.getByRole("button", { name: "Open settings" }).click();
     await page.locator('input[name="username"]').waitFor({ state: "visible" });
-    await page.getByRole("button", { name: "Load" }).waitFor({ state: "visible" });
+    await page.getByRole("button", { name: "Save" }).waitFor({ state: "visible" });
+    await page.getByRole("button", { name: "Close settings" }).click();
   });
 
   test("shows welcome message when no username entered", async () => {
     const page = getPage();
-    await page
-      .getByText("Enter a Chess.com username to get started")
-      .waitFor({ state: "visible" });
+    await page.getByText("No username set").waitFor({ state: "visible" });
   });
 });
 
@@ -67,7 +66,11 @@ describe("game gallery (seeded data)", () => {
 
   test("shows correct player names on game cards", async () => {
     const page = getPage();
-    expect(await page.getByText("e2e_fakeplayer").count()).toBe(3);
+    // Scope to the gallery cards — the navbar also renders the active username.
+    const inCards = page
+      .locator('a[href^="/analysis/"]')
+      .getByText("e2e_fakeplayer");
+    expect(await inCards.count()).toBe(3);
   });
 
   test("shows result badges", async () => {
@@ -107,29 +110,6 @@ describe("client-side filters", () => {
     reset: resetFilters,
   });
 
-  test("text filter narrows results by opponent name", async () => {
-    const page = getPage();
-    const searchInput = page.getByPlaceholder("Search by opponent...");
-    await searchInput.fill("opponent1");
-    expect(await page.locator('a[href^="/analysis/"]').count()).toBe(1);
-  });
-
-  test("text filter is case-insensitive", async () => {
-    const page = getPage();
-    const searchInput = page.getByPlaceholder("Search by opponent...");
-    await searchInput.fill("OPPONENT1");
-    expect(await page.locator('a[href^="/analysis/"]').count()).toBe(1);
-  });
-
-  test("text filter shows all when cleared", async () => {
-    const page = getPage();
-    const searchInput = page.getByPlaceholder("Search by opponent...");
-    await searchInput.fill("opponent1");
-    expect(await page.locator('a[href^="/analysis/"]').count()).toBe(1);
-    await searchInput.clear();
-    expect(await page.locator('a[href^="/analysis/"]').count()).toBe(3);
-  });
-
   test("time class filter works", async () => {
     const page = getPage();
     const tc = page.getByRole("group", { name: "Time class" });
@@ -159,8 +139,7 @@ describe("client-side filters", () => {
     const page = getPage();
     // Scope to the gallery badge <span> (KPI band has its own "N games").
     await page.locator("span", { hasText: /^3 games$/ }).waitFor({ state: "visible" });
-    const searchInput = page.getByPlaceholder("Search by opponent...");
-    await searchInput.fill("opponent1");
+    await page.getByRole("group", { name: "Time class" }).getByRole("button", { name: "Blitz" }).click();
     await page.locator("span", { hasText: /^1 game$/ }).waitFor({ state: "visible" });
   });
 

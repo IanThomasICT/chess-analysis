@@ -55,11 +55,13 @@ describe("app shell navbar", () => {
 describe("username persistence", () => {
   const { getPage } = usePage("/study");
 
-  test("Load sets the username in the URL and threads it through nav", async () => {
+  test("Settings sets the username in the URL and threads it through nav", async () => {
     const page = getPage();
     const navbar = page.getByRole("banner");
-    await navbar.locator('input[name="username"]').fill("capybara_test");
-    await navbar.getByRole("button", { name: "Load" }).click();
+    await navbar.getByRole("button", { name: "Open settings" }).click();
+    const dialog = page.getByRole("dialog", { name: "Settings" });
+    await dialog.locator('input[name="username"]').fill("capybara_test");
+    await dialog.getByRole("button", { name: "Save" }).click();
 
     await page.waitForURL("**/study?username=capybara_test");
 

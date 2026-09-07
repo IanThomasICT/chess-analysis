@@ -38,7 +38,8 @@ describe("metrics card on analysis page", () => {
     const page = getPage();
     await openReport(page);
     // e2e_game_1 is a clean win for e2e_fakeplayer (Scholar's Mate as White).
-    await page.getByText("Clean win").waitFor({ state: "visible" });
+    // Quality shows in both the always-visible digest and the Report card → first().
+    await page.getByText("Clean win").first().waitFor({ state: "visible" });
   });
 
   test("shows phase-accuracy rows", async () => {

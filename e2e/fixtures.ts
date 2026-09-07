@@ -41,6 +41,12 @@ interface GameSeed {
   end_time: number;
 }
 
+// Anchor seed games to the recent past (relative to seed time) so date-windowed
+// views — notably the Stats "Patterns" section's 60-day window — include them.
+// Fixed epochs would fall outside the window as wall-clock time advances.
+const DAY_S = 86_400;
+const SEED_NOW = Math.floor(Date.now() / 1000);
+
 const GAMES: readonly GameSeed[] = [
   {
     id: "e2e_game_1",
@@ -49,7 +55,7 @@ const GAMES: readonly GameSeed[] = [
     black: "opponent1",
     result: "1-0",
     time_class: "blitz",
-    end_time: 1736899200,
+    end_time: SEED_NOW - DAY_S,
   },
   {
     id: "e2e_game_2",
@@ -58,7 +64,7 @@ const GAMES: readonly GameSeed[] = [
     black: "e2e_fakeplayer",
     result: "0-1",
     time_class: "bullet",
-    end_time: 1736812800,
+    end_time: SEED_NOW - 2 * DAY_S,
   },
   {
     id: "e2e_game_3",
@@ -67,7 +73,7 @@ const GAMES: readonly GameSeed[] = [
     black: "opponent3",
     result: "1/2-1/2",
     time_class: "rapid",
-    end_time: 1736726400,
+    end_time: SEED_NOW - 3 * DAY_S,
   },
 ];
 
