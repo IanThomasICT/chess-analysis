@@ -132,32 +132,24 @@ export function buildGameRow(
   };
 }
 
-const games = new Hono();
+/**
+ * Usernames whose Chess.com sync is currently running. Guards against stacking
+ * duplicate background syncs when several requests arrive while one is in flight.
+ */
+const inFlightSync = new Set<string>();
 
-// Bulk metrics — MUST be registered before /games/:gameId, otherwise Hono
-// captures "metrics" as a gameId.
-games.get("/games/metrics", (c) => {
-  const username = c.req.query("username");
-  if (username === undefined || username === "") {
-    return c.json({ error: "username required" }, 400);
+/**
+ * Pull recent archives from Chess.com and upsert them into `games`. Skips
+ * bot/coach games. Best-effort: network failures are logged, not thrown, so the
+ * caller can always fall back to the DB cache. No-ops if a sync for this user is
+ * already running.
+ */
+async function syncFromChessCom(username: string): Promise<void> {
+  const key = username.toLowerCase();
+  if (inFlightSync.has(key)) {
+    return;
   }
-  if (!USERNAME_PATTERN.test(username)) {
-    return c.json({ error: "Invalid username format" }, 400);
-  }
-  return c.json(fetchBulkMetricsFor(db, username));
-});
-
-games.get("/games", async (c) => {
-  const username = c.req.query("username");
-  if (username === undefined || username === "") {
-    return c.json({ games: [], username: null });
-  }
-
-  if (!USERNAME_PATTERN.test(username)) {
-    return c.json({ error: "Invalid username format" }, 400);
-  }
-
-  // Fetch from Chess.com + upsert
+  inFlightSync.add(key);
   try {
     const chessComGames = await fetchRecentGames(username, FETCH_MONTHS);
 
@@ -201,7 +193,49 @@ games.get("/games", async (c) => {
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Unknown error";
     console.error("Failed to fetch from Chess.com:", message);
-    // Fall through to load from DB cache
+  } finally {
+    inFlightSync.delete(key);
+  }
+}
+
+const games = new Hono();
+
+// Bulk metrics — MUST be registered before /games/:gameId, otherwise Hono
+// captures "metrics" as a gameId.
+games.get("/games/metrics", (c) => {
+  const username = c.req.query("username");
+  if (username === undefined || username === "") {
+    return c.json({ error: "username required" }, 400);
+  }
+  if (!USERNAME_PATTERN.test(username)) {
+    return c.json({ error: "Invalid username format" }, 400);
+  }
+  return c.json(fetchBulkMetricsFor(db, username));
+});
+
+games.get("/games", async (c) => {
+  const username = c.req.query("username");
+  if (username === undefined || username === "") {
+    return c.json({ games: [], username: null });
+  }
+
+  if (!USERNAME_PATTERN.test(username)) {
+    return c.json({ error: "Invalid username format" }, 400);
+  }
+
+  // Refresh from Chess.com. The previous behaviour awaited a 6-month archive
+  // pull on every load (~12s), so the gallery sat on "Loading games…" each
+  // visit. Instead: serve the DB cache instantly and refresh in the background.
+  // Only block when there is nothing cached yet (a user's first import), so the
+  // gallery is never empty when games actually exist.
+  const cached = db
+    .prepare("SELECT COUNT(*) AS n FROM games WHERE username = ? AND vs_bot IS NOT 1")
+    .get(username.toLowerCase()) as { n: number };
+
+  if (cached.n === 0) {
+    await syncFromChessCom(username);
+  } else {
+    void syncFromChessCom(username);
   }
 
   // Load from DB — exclude games against bots (real people only); NULL = unresolved
