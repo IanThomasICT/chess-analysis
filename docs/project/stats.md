@@ -61,8 +61,14 @@ shows several panels at once so multiple metrics read at a glance (see [ui-ux.md
 | **Openings** | Repertoire (white/black toggle) · By opening (CSS bars) |
 | **Patterns** | Blundered motifs (deep-links `/analysis/:id?move=N`) · Leak closure · By opponent rating · Win rate by rating bucket · Time-of-day 7×24 heatmap |
 
-Backend endpoints are unchanged — the consolidation is purely a client-side regrouping of the same
-queries. Reached from the persistent top navbar's "Stats" link (carries `?username=`).
+The **Patterns** section is windowed to the **last `PATTERN_WINDOW_DAYS` (60) days**: it computes a stable
+`from = now − 60d` (epoch seconds, memoised once per mount) and threads it as the `from` query param into
+the motifs / leak-closure / vs-opponent / rating-bucket win-rate / time-of-day requests. This keeps
+weakness data aligned with the player's current level instead of mixing in much older, lower-rated games.
+The corresponding `compute*` helpers in `server/routes/stats.ts` accept optional `from`/`to` epoch bounds
+(`motifs` and the rating-bucket `win-rate` slice already did; `leak-closure`, `vs-opponent`, and
+`by-time-of-day` gained them). Other sections remain full-history. Reached from the persistent top
+navbar's "Stats" link (carries `?username=`).
 
 ## Migrations introduced in Phase 2
 

@@ -178,7 +178,7 @@ describe("UCI output parsing", () => {
 
 // =====================================================================
 // Score convention validation
-// All scores from White's perspective per docs/analysis-mode.md
+// All scores from White's perspective per docs/project/analysis-mode.md
 // =====================================================================
 
 describe("score convention (White's perspective)", () => {

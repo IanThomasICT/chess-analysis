@@ -163,6 +163,10 @@ The Bun server (`server/index.ts`) sets `idleTimeout: 120` to prevent the defaul
 
 Analysis starts **automatically** when the game page loads and the game hasn't been analyzed yet. A `useEffect` with a ref guard opens an `EventSource` to `/api/analyze/:gameId` and streams results into component state. The progress bar updates based on `moveIndex / total`. The EventSource is cleaned up on unmount.
 
+On the `done` event the client invalidates four TanStack Query keys so the page updates without a reload:
+`["game", id]` (flips `analyzed` → true, which enables the metrics query behind the accuracy strip),
+`["metrics", id]`, `["metricDetail", id]` (the `GameReviewSummary` digest), and `["alternatives", id]`.
+
 ## Analysis View
 
 File: `client/src/pages/Analysis.tsx`

@@ -11,6 +11,10 @@ After completing any set of code changes, always do both steps before considerin
 
 Read `docs/README.md` first. It indexes all specs with related files so you can jump to the right doc efficiently.
 
+Layout: `docs/core.md` (vision + architecture), `docs/HANDOFF.md` (branch state), `docs/project/*.md`
+(canonical per-feature specs — update these), `docs/references/*.md` (external libs/APIs),
+`docs/plans/*.md` (completed plans, provenance only). New specs go in `docs/project/` + a README row.
+
 ## Commands
 
 ```bash

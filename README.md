@@ -91,13 +91,13 @@ bun run test:all     # Unit + e2e
 
 - [`docs/README.md`](docs/README.md) — spec index
 - [`docs/core.md`](docs/core.md) — vision, architecture, schema, file tree
-- [`docs/metrics.md`](docs/metrics.md) — Lichess accuracy formulas, classification thresholds
-- [`docs/stats.md`](docs/stats.md) — `/stats` page + endpoints
-- [`docs/drill.md`](docs/drill.md) — drill mode + FSRS
-- [`docs/motifs.md`](docs/motifs.md) — motif detectors + tagging
-- [`docs/study.md`](docs/study.md) — glossary page
-- [`docs/analysis-mode.md`](docs/analysis-mode.md) — Stockfish lifecycle + SSE + deep analysis
-- [`docs/security.md`](docs/security.md) — headers, rate limits, SSRF guards
+- [`docs/project/metrics.md`](docs/project/metrics.md) — Lichess accuracy formulas, classification thresholds
+- [`docs/project/stats.md`](docs/project/stats.md) — `/stats` page + endpoints
+- [`docs/project/drill.md`](docs/project/drill.md) — drill mode + FSRS
+- [`docs/project/motifs.md`](docs/project/motifs.md) — motif detectors + tagging
+- [`docs/project/study.md`](docs/project/study.md) — glossary page
+- [`docs/project/analysis-mode.md`](docs/project/analysis-mode.md) — Stockfish lifecycle + SSE + deep analysis
+- [`docs/project/security.md`](docs/project/security.md) — headers, rate limits, SSRF guards
 
 ## Non-goals
 

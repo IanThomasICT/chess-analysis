@@ -70,10 +70,9 @@ File: `client/src/pages/Home.tsx`
 
 The page uses TanStack Query (`useQuery`) to fetch games via `fetchGames(username)` from `client/src/api.ts`. The server handler:
 1. Reads `?username=` from the URL query params
-2. Fetches the last 6 months from Chess.com (`FETCH_MONTHS` in `server/routes/games.ts`)
-3. Upserts all games into the `games` table (using `INSERT OR REPLACE`) — each row populated via the exported `buildGameRow(username, ChessComGame)` helper, which extracts WhiteElo / BlackElo / ECO / Opening from PGN headers (falling back to `classifyOpening(pgnToMoves(pgn))` when headers are absent)
-4. If the Chess.com fetch fails, falls through to load from the DB cache
-5. Returns all games for the username, sorted by `end_time DESC`
+2. **Cache-first refresh.** Counts cached (non-bot) games for the user. If **zero** (first import), it `await`s a Chess.com sync before responding; otherwise it kicks the sync off in the **background** (`void syncFromChessCom`) and returns the DB cache immediately. This is the critical path for the gallery — awaiting the 6-month archive pull on every load (the old behavior) blocked the response ~10–12s, so the gallery sat on "Loading games…" each visit. An `inFlightSync` guard skips a sync already running for that user.
+3. `syncFromChessCom` fetches the last 6 months from Chess.com (`FETCH_MONTHS`) and upserts into the `games` table (`INSERT OR REPLACE`) — each row populated via the exported `buildGameRow(username, ChessComGame)` helper, which extracts WhiteElo / BlackElo / ECO / Opening from PGN headers (falling back to `classifyOpening(pgnToMoves(pgn))` when headers are absent). Bot/coach games are skipped. Network failures are logged, not thrown.
+4. Loads all non-bot games for the username from the DB, sorted by `end_time DESC`, and returns them. Newly synced games surface on the next load.
 
 The game ID is extracted from the Chess.com game URL: `g.url.split("/").pop()`.
 
@@ -84,25 +83,32 @@ A second `useQuery` calls `fetchBulkMetrics(username)` against `/api/games/metri
 The active username now lives in the shared `UsernameProvider` (`client/src/context/Username.tsx`),
 rendered by `AppShell`. It mirrors the `?username=` query param to `localStorage`
 (`"chess-analyzer-username"`) and, on a cold load with no param, restores the cached value via
-`setSearchParams({ replace: true })`. The username input + Load button live in the top navbar; pages
-read the value with `useUsername()`. (Home no longer owns this logic.)
+`setSearchParams({ replace: true })`. The username is set through the **settings dialog** (gear button in
+the navbar, see `SettingsModal.tsx`) — there is no inline input or `Load` button. Pages read the value with
+`useUsername()`. (Home no longer owns this logic.)
 
 ### Client Filters + Sort
 
-The gallery supports three client-side filters and a sort mode (no server round-trip). Filters are
-`SegmentedControl` pill-groups (all options visible at a glance — see [ui-ux.md](ui-ux.md)), not
-dropdowns; each group carries an accessible `label` (`role="group"`).
+The gallery supports two client-side filters and a sort mode (no server round-trip, no free-text search).
+Filters are `SegmentedControl` pill-groups (all options visible at a glance — see [ui-ux.md](ui-ux.md)),
+not dropdowns; each group carries an accessible `label` (`role="group"`).
 
 | Control | Type | Options |
 |---|---|---|
-| Text search | Free text input | Matches against white/black usernames |
-| Time class | SegmentedControl (`label="Time class"`) | All, Bullet, Blitz, Rapid, Daily |
+| Time class | SegmentedControl (`label="Time class"`) | All, Bullet, Blitz, Rapid, Daily (defaults to the `defaultTimeClass` setting) |
 | Result | SegmentedControl (`label="Result"`) | All, Wins, Losses, Draws |
 | Sort | SegmentedControl (`label="Sort"`) | Recent (default), Worst, Best |
 
 Result filtering is relative to the queried username (e.g. "Wins" means games where that user won). Worst/Best sort by the user-side accuracy from `metricsMap`; games with no metrics sort to the end regardless of mode.
 
 A count badge shows the number of filtered results.
+
+### Lazy rendering
+
+All matching games are fetched once (server cache) but the `GameCard` grid renders incrementally: the first
+`PAGE_SIZE` (25) cards paint immediately, and an `IntersectionObserver` sentinel below the grid grows the
+window by `PAGE_SIZE` each time it nears the viewport. The window resets to 25 whenever the filter/sort/
+username changes.
 
 ### KPI band (StatsPanel)
 

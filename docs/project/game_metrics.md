@@ -1,7 +1,7 @@
 # Game Metrics Tracking — Vision & Design
 
 > **Status: implemented.** This document is the original design. The feature is
-> built per the sequence in `PLAN.md`. Canonical code: `server/lib/{metrics-config,
+> built per the sequence in [`../plans/game-metrics-plan.md`](../plans/game-metrics-plan.md). Canonical code: `server/lib/{metrics-config,
 > phases,ply-timeline,game-metrics,metrics-store}.ts`, `server/routes/metrics.ts`,
 > aggregates in `server/routes/stats.ts`, batch runner `server/scripts/build-metrics.ts`
 > (`bun run metrics <user>`), client `MetricsCard.tsx` + new `/stats` tabs. The L1→L2

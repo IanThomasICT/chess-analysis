@@ -9,8 +9,9 @@
 File: `client/src/components/AppShell.tsx` + `client/src/components/ui/*`.
 
 `AppShell` is the persistent frame: a top navbar (`h-14`) with brand, nav links
-(`Games / Stats / Drill / Study`, active-state, carry `?username=`), and the username switcher, over a
-routed `<Outlet/>`. It wraps `UsernameProvider` so every page reads the active user via `useUsername()`.
+(`Games / Stats / Drill / Study`, active-state, carry `?username=`), and a settings button (current username +
+gear icon) that opens `SettingsModal`, over a routed `<Outlet/>`. It wraps `UsernameProvider` and
+`SettingsProvider` so every page reads the active user via `useUsername()` and client prefs via `useSettings()`.
 All routes are children of one layout route in `App.tsx`.
 
 Reusable primitives in `components/ui/` (compose pages from these, don't re-derive markup):
@@ -23,6 +24,40 @@ Reusable primitives in `components/ui/` (compose pages from these, don't re-deri
 | `Tabs` | underline tab bar (controlled) — Analysis rail + Stats sections |
 | `SegmentedControl` | inline option group, all choices visible; `label` → `role="group"` (a11y + tests) |
 | `TimeClassIcon` | lucide time-class glyph (bullet/blitz/rapid/daily), replaces emoji |
+
+## SettingsModal
+
+File: `client/src/components/SettingsModal.tsx` (+ `client/src/context/Settings.tsx`).
+
+Dialog (`role="dialog"`, aria-label `Settings`) opened from the navbar. Props: `open`, `onClose`. Holds a
+local `draft` of the username (`input[name="username"]`, reseeded each open, auto-focused) and applies it
+via `useUsername().setUsername` on **Save**. The default time-class `SegmentedControl` writes through
+`useSettings().updateSettings` immediately (no Save needed). Closes on Escape, backdrop click, close button,
+or Cancel. `SettingsProvider` persists `{ defaultTimeClass }` to localStorage key `chess-analyzer-settings`,
+validating the stored value against the allowed set on read.
+
+## MoveScrubber
+
+File: `client/src/components/MoveScrubber.tsx`.
+
+Replaces the `« ‹ N/M › »` stepper under the Analysis board. Props: `currentMove`, `maxMove`, `onSelect`,
+`onFlip`, `classifications: MoveClass[]`, `userIsWhite`. A transparent `<input type="range">` is the
+interaction layer (drag + keyboard); a styled rail, progress fill, and thumb render beneath it. Ticks
+(`bg-blunder` / `bg-mistake`) mark the **user's** blunders/mistakes only (parity of move index vs
+`userIsWhite`) and are clickable buttons (`aria-label="Go to <kind> at move N"`). Icon buttons
+`First move` / `Previous move` / `Next move` / `Last move` / `Flip board` are aria-labelled and disabled at
+the bounds. Renders the `N / M` counter the e2e suite keys on.
+
+## GameReviewSummary
+
+File: `client/src/components/GameReviewSummary.tsx` (memo).
+
+Always-visible digest above the Analysis rail tabs. Props: `gameId`, `onSelectMove(positionIndex)`. Queries
+`["metricDetail", gameId]` → `GET /api/metrics/game/:id` and renders the result-quality chip, Elo delta,
+time-trouble chip, and the top-3 `criticalMoves` as buttons (`Jump to <SAN>`) that call
+`onSelectMove(move.plyIndex)` — `plyIndex` is already the position index after the move, so no `+1`.
+Pending → "Building report…"; error (game not yet analyzed → 404) → "Report available once analysis
+finishes." Analysis SSE `done` invalidates the query so the digest appears live.
 
 ## EvalBar
 

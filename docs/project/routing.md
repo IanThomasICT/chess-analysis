@@ -29,7 +29,7 @@ Files: `server/routes/{games,analyze,stats,positions,drill}.ts`. All routers mou
 
 | Endpoint | Handler | Purpose |
 |---|---|---|
-| `GET /api/games?username=X` | `games.ts` | Fetch + cache games from Chess.com |
+| `GET /api/games?username=X` | `games.ts` | Cache-first: returns cached non-bot games immediately and refreshes from Chess.com in the background (`syncFromChessCom`, deduped per user); only awaits the sync on a first import (zero cached games) |
 | `GET /api/games/metrics?username=X` | `games.ts` | Bulk per-game metrics (registered **before** `/games/:gameId` to avoid Hono capturing the literal `metrics` as a `:gameId`) |
 | `GET /api/games/:gameId` | `games.ts` | Load single game with FENs, moves, analysis, motifs |
 | `GET /api/games/:gameId/metrics` | `games.ts` | Per-game accuracy / blunder metrics (lazy compute + cache) |
@@ -40,9 +40,21 @@ Files: `server/routes/{games,analyze,stats,positions,drill}.ts`. All routers mou
 | `GET /api/stats/:user/win-rate?slice=&from=&to=` | `stats.ts` | Win-rate slice (color / time_class / rating_bucket / opening) |
 | `GET /api/stats/:user/elo-trend?time_class=` | `stats.ts` | Elo time series |
 | `GET /api/stats/:user/accuracy-trend?time_class=` | `stats.ts` | Accuracy time series |
-| `GET /api/stats/:user/by-time-of-day` | `stats.ts` | 7×24 heatmap (uses `USER_TZ`) |
+| `GET /api/stats/:user/by-time-of-day?from=&to=` | `stats.ts` | 7×24 heatmap (uses `USER_TZ`); optional epoch bounds |
 | `GET /api/stats/:user/motifs?from=&to=` | `stats.ts` | Recurring motif counts (user-side only) |
 | `GET /api/stats/:user/drill-progress` | `stats.ts` | Total attempts, accuracy %, due-today, streak |
+| `GET /api/stats/:user/consistency` | `stats.ts` | Accuracy variance / consistency buckets |
+| `GET /api/stats/:user/session-fatigue` | `stats.ts` | Accuracy by game-number-within-session |
+| `GET /api/stats/:user/vs-opponent?from=&to=` | `stats.ts` | Results + accuracy bucketed by opponent rating delta; optional epoch bounds |
+| `GET /api/stats/:user/acl-trend?time_class=` | `stats.ts` | Average centipawn loss time series |
+| `GET /api/stats/:user/leak-closure?from=&to=` | `stats.ts` | Motif counts first half vs second half (median split of the windowed set); optional epoch bounds |
+| `GET /api/stats/:user/tpr?time_class=` | `stats.ts` | Tournament performance rating (FIDE dp) |
+| `GET /api/stats/:user/repertoire?color=` | `stats.ts` | Opening repertoire for one color |
+| `GET /api/stats/:user/counterplay` | `stats.ts` | Counterplay / swindle stats |
+| `GET /api/stats/:user/endgame-conversion` | `stats.ts` | Endgame conversion rates |
+| `GET /api/metrics/game/:gameId` | `metrics.ts` | Full per-game metric detail (phases, time, critical moves, result quality) — drives `GameReviewSummary` + `MetricsCard` |
+| `GET /api/metrics/:username` | `metrics.ts` | Per-game metric summaries for a user |
+| `GET /api/metrics/:username/export?format=` | `metrics.ts` | CSV / JSON export of per-game metrics |
 | `GET /api/drill/queue?username=&limit=` | `drill.ts` | FSRS drill queue (due + new positions) |
 | `POST /api/drill/attempt` | `drill.ts` | Record an attempt; FSRS schedules next due |
 
@@ -53,7 +65,7 @@ The client uses **TanStack Query** (`useQuery`) for data fetching, not React Rou
 ### Home page (`Home.tsx`)
 
 - `useQuery` calls `fetchGames(username)` from `client/src/api.ts`
-- The API handler fetches from Chess.com first (fetch + upsert), then queries the DB
+- The API handler serves the DB cache immediately and refreshes from Chess.com in the background (first import awaits the sync) — see [gallery.md](gallery.md)
 - Returns `{ games: GameRow[], username: string | null }`
 
 ### Analysis page (`Analysis.tsx`)

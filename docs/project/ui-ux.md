@@ -4,7 +4,9 @@ Canonical record of the interface vision and the design decisions that express i
 Read this before touching anything under `client/src/` so new work stays coherent.
 
 Related files: `client/src/app.css`, `client/src/main.tsx`, `client/src/lib/theme-colors.ts`,
-`client/src/components/AppShell.tsx`, `client/src/context/Username.tsx`,
+`client/src/components/AppShell.tsx`, `client/src/components/SettingsModal.tsx`,
+`client/src/components/MoveScrubber.tsx`, `client/src/components/GameReviewSummary.tsx`,
+`client/src/context/Username.tsx`, `client/src/context/Settings.tsx`,
 `client/src/components/ui/*`, all `client/src/pages/*`.
 
 ---
@@ -89,11 +91,18 @@ daily→CalendarDays, fallback→Dices). Blunders→AlertTriangle, time trouble�
 ## Layout system
 
 ### App shell (`AppShell.tsx`)
-A persistent top navbar (`h-14`) over a routed `<Outlet/>` — the single source of navigation and the
-username switcher. Replaces the five mismatched per-page headers. Nav links (`Games / Stats / Drill /
-Study`) carry the active `?username=` and show an active state. `UsernameProvider` (`context/Username.tsx`)
-centralises the `?username=` query param + localStorage so pages read it via `useUsername()` without
-prop-drilling. All routes are children of one layout route in `App.tsx`.
+A persistent top navbar (`h-14`) over a routed `<Outlet/>` — the single source of navigation. Nav links
+(`Games / Stats / Drill / Study`) carry the active `?username=` and show an active state. The right side is
+a single **settings button** (shows the current username + a gear icon) that opens `SettingsModal` — there
+is no inline username field or `Load` button. `UsernameProvider` (`context/Username.tsx`) centralises the
+`?username=` query param + localStorage; `SettingsProvider` (`context/Settings.tsx`) holds client-only
+prefs (currently `defaultTimeClass`) in localStorage. Pages read both via `useUsername()` / `useSettings()`
+without prop-drilling. All routes are children of one layout route in `App.tsx`.
+
+### Settings modal (`SettingsModal.tsx`)
+Centered dialog (`role="dialog"`, aria-label `Settings`) opened from the navbar. Sets the Chess.com
+username (`input[name="username"]`, applied on **Save**) and the default gallery time class. Closes on
+Escape, backdrop click, or the close button.
 
 ### Page archetypes
 - **Scrolling content pages** (Games, Stats, Drill, Study): `mx-auto max-w-7xl px-4 py-6`; body grows and
@@ -120,18 +129,26 @@ prop-drilling. All routes are children of one layout route in `App.tsx`.
 
 - **Games (`Home`).** Opens with a KPI band (`StatsPanel` → record, win rate, accuracy, blunders/game,
   per-side) so the player's standing is the first thing seen. Compact segmented filters (time class /
-  result / sort). Dense `GameCard` grid: result chip, time-class icon, accuracy mini-bar + mono %, and
-  diagnostic chips (blunders, swindle, unlucky, time, flag).
+  result / sort) — no free-text search; the time-class filter defaults to the saved `defaultTimeClass`
+  preference until the user overrides it. Dense `GameCard` grid: result chip, time-class icon, accuracy
+  mini-bar + mono %, and diagnostic chips (blunders, swindle, unlucky, time, flag). The grid is
+  **lazy-rendered** — the latest 25 cards paint immediately and the rest stream in `PAGE_SIZE` at a time as
+  an `IntersectionObserver` sentinel scrolls into view.
 - **Analysis.** The flagship no-scroll surface. Left: eval bar + board (+ player rows). Under the board:
-  slim eval-graph strip, move nav (`« ‹  N / M  › »` + flip), and blunder/mistake/missed jump buttons.
-  Right: a full-height **tabbed rail** — *Moves* (with an always-visible accuracy strip), *Report* (the
-  consolidated per-game `MetricsCard`: phase accuracy, position quality, time, conversion/defense,
-  critical moves, missed conversions), *Engine* (alternatives), *History* (recurrence). The improvement
-  evidence that used to live below the fold is now one click away.
+  slim eval-graph strip and a **move scrubber** (`MoveScrubber`) — a draggable timeline with red/orange
+  ticks at your blunders/mistakes, framed by icon prev/next/first/last/flip controls (aria-labelled,
+  disabled at the bounds) plus an `N / M` counter; below it the blunder/mistake/missed jump buttons.
+  Right: a full-height rail that **always** shows, above the tabs, an accuracy strip (your/opponent %, with
+  a clickable blunder chip that jumps to your next blunder) and `GameReviewSummary` (result quality, Elo
+  swing, and the top-3 critical moves to review — each a button that jumps the board there). Tabs below:
+  *Moves*, *Report* (the consolidated per-game `MetricsCard`), *Engine* (alternatives), *History*
+  (recurrence). The headline "what should I fix?" is now visible without opening a tab.
 - **Stats.** Consolidated from 15 flat tabs into **4 dashboard sections** — *Overview* (by-side,
   performance/TPR, consistency, drill, win-rate by time class), *Trends* (Elo/Accuracy/ACL with one shared
   time-class toggle), *Openings* (repertoire, by opening), *Patterns* (motifs, leak closure, by opponent,
-  by rating, time-of-day). Each section shows several panels at once.
+  by rating, time-of-day). Each section shows several panels at once. The **Patterns** section is scoped to
+  the **last 60 days** (`PATTERN_WINDOW_DAYS`) — passed as `from` to the motif/leak/vs-opponent/rating/
+  time-of-day queries — so weaknesses reflect the player's current level, not games from a much lower Elo.
 - **Drill.** Distraction-free: compact session header (score / card N of M), centered interactive board,
   tonal correct/incorrect feedback, next.
 - **Study.** Sticky term TOC beside themed glossary cards; metric badges colored by token.
@@ -140,8 +157,11 @@ prop-drilling. All routes are children of one layout route in `App.tsx`.
 
 ## Accessibility & test handles (do not break casually)
 The e2e suite couples to stable, user-meaningful handles — preserve them or update tests deliberately:
-- Move counter renders exact `N / M`; nav buttons keep `« ‹ › »` glyphs; move list renders SAN buttons.
-- Brand link contains "Chess Analyzer"; `Back` link → `/`; username `input[name="username"]` + `Load`.
+- Move counter renders exact `N / M`; scrubber nav buttons expose aria-labels `First move` / `Previous
+  move` / `Next move` / `Last move` / `Flip board` (disabled at the bounds); move list renders SAN buttons
+  (match bare SAN with `exact: true` so the "Review these moves" buttons don't collide).
+- Brand link contains "Chess Analyzer"; `Back` link → `/`. Username lives in the settings dialog: open via
+  the `Open settings` button, then `input[name="username"]` + `Save` (inside `role="dialog"` "Settings").
 - `SegmentedControl label` exposes `role="group"` with an accessible name (filter tests scope by it).
 - Active move highlight uses an `bg-accent`-prefixed class.
 

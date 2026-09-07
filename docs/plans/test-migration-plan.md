@@ -1,7 +1,7 @@
 # Test Migration Plan — UI/UX Redesign
 
 Plan for bringing the test suite in line with the redesign (single dark theme, top-navbar app shell,
-no-scroll Analysis with a tabbed rail, consolidated Stats sections, emoji→lucide). See `docs/ui-ux.md`.
+no-scroll Analysis with a tabbed rail, consolidated Stats sections, emoji→lucide). See `docs/project/ui-ux.md`.
 
 **Scope:** only the **e2e** suite (`e2e/`) couples to UI markup. The unit suite (`tests/`) is pure logic
 and needs **no changes** (verified — see §Unit). The edits in §2 are already applied; they remain

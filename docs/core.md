@@ -20,7 +20,7 @@ If a proposed feature does not plausibly move one of those three numbers for **t
 4. **Cache aggressively.** Analysis is expensive (Stockfish CPU time). Re-analyzing a position is waste. Every eval is persisted to SQLite keyed by `(game_id, move_index)` and reused forever.
 5. **No premature generality.** No multi-user schema, no plugin system, no abstractions for hypothetical future games sites. If Lichess support is ever wanted, it gets added then — not designed for now.
 
-> **UI/UX vision and the design system that expresses it live in [ui-ux.md](ui-ux.md)** —
+> **UI/UX vision and the design system that expresses it live in [ui-ux.md](project/ui-ux.md)** —
 > single committed warm-dark theme, at-a-glance / no-scroll philosophy, top-navbar app shell,
 > token-driven color, `components/ui/` primitive vocabulary. Read it before changing `client/src/`.
 
