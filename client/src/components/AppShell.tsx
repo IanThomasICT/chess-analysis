@@ -1,6 +1,17 @@
+import { useState } from "react";
 import { NavLink, Outlet, Link } from "react-router";
-import { LayoutGrid, BarChart3, Target, BookOpen, type LucideIcon } from "lucide-react";
+import {
+  LayoutGrid,
+  BarChart3,
+  Target,
+  BookOpen,
+  Settings as SettingsIcon,
+  UserRound,
+  type LucideIcon,
+} from "lucide-react";
 import { UsernameProvider, useUsername } from "../context/Username";
+import { SettingsProvider } from "../context/Settings";
+import { SettingsModal } from "./SettingsModal";
 
 /** Navbar height — Analysis sizes its no-scroll layout to `100vh - 3.5rem`. */
 export const NAVBAR_H = "3.5rem";
@@ -21,16 +32,10 @@ const NAV_ITEMS: NavItem[] = [
 ];
 
 function Navbar() {
-  const { username, setUsername } = useUsername();
+  const { username } = useUsername();
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const search =
     username !== "" ? `?username=${encodeURIComponent(username)}` : "";
-
-  const handleSubmit = (e: React.SyntheticEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    const formData = new FormData(e.currentTarget);
-    const raw = formData.get("username");
-    setUsername(typeof raw === "string" ? raw.trim() : "");
-  };
 
   return (
     <header className="h-14 shrink-0 border-b border-line bg-surface">
@@ -64,23 +69,21 @@ function Navbar() {
           })}
         </nav>
 
-        <form onSubmit={handleSubmit} className="ml-auto flex items-center gap-2">
-          <input
-            key={username}
-            type="text"
-            name="username"
-            placeholder="Chess.com username"
-            defaultValue={username}
-            className="w-44 rounded-md border border-line bg-canvas px-3 py-1.5 text-sm text-fg placeholder:text-faint focus:outline-none focus:ring-2 focus:ring-accent"
-          />
-          <button
-            type="submit"
-            className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-on-accent transition-colors hover:bg-accent-hover"
-          >
-            Load
-          </button>
-        </form>
+        <button
+          type="button"
+          onClick={() => { setSettingsOpen(true); }}
+          aria-label="Open settings"
+          className="ml-auto flex items-center gap-2 rounded-md border border-line bg-canvas px-3 py-1.5 text-sm text-fg transition-colors hover:border-accent hover:bg-raised"
+        >
+          <UserRound size={15} className="text-muted" />
+          <span className="max-w-[10rem] truncate font-medium">
+            {username !== "" ? username : "Set username"}
+          </span>
+          <SettingsIcon size={15} className="text-muted" />
+        </button>
       </div>
+
+      <SettingsModal open={settingsOpen} onClose={() => { setSettingsOpen(false); }} />
     </header>
   );
 }
@@ -89,12 +92,14 @@ function Navbar() {
 export function AppShell() {
   return (
     <UsernameProvider>
-      <div className="flex min-h-screen flex-col bg-canvas">
-        <Navbar />
-        <main className="min-h-0 flex-1">
-          <Outlet />
-        </main>
-      </div>
+      <SettingsProvider>
+        <div className="flex min-h-screen flex-col bg-canvas">
+          <Navbar />
+          <main className="min-h-0 flex-1">
+            <Outlet />
+          </main>
+        </div>
+      </SettingsProvider>
     </UsernameProvider>
   );
 }

@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   fetchGames,
@@ -13,8 +13,12 @@ import { GameCard } from "../components/GameCard";
 import { StatsPanel } from "../components/StatsPanel";
 import { SegmentedControl } from "../components/ui/SegmentedControl";
 import { useUsername } from "../context/Username";
+import { useSettings, type TimeClassFilter } from "../context/Settings";
 
 type SortMode = "recent" | "worst" | "best";
+
+/** Games rendered on first paint; the rest stream in on scroll. */
+const PAGE_SIZE = 25;
 
 const SORT_OPTIONS: Array<{ value: SortMode; label: string }> = [
   { value: "recent", label: "Recent" },
@@ -22,7 +26,7 @@ const SORT_OPTIONS: Array<{ value: SortMode; label: string }> = [
   { value: "best", label: "Best" },
 ];
 
-const TIME_CLASS_OPTIONS = [
+const TIME_CLASS_OPTIONS: Array<{ value: TimeClassFilter; label: string }> = [
   { value: "all", label: "All" },
   { value: "bullet", label: "Bullet" },
   { value: "blitz", label: "Blitz" },
@@ -51,6 +55,7 @@ function userSideOf(game: GameRow, username: string | null): "white" | "black" {
 
 export function Home() {
   const { username: usernameParam } = useUsername();
+  const { settings } = useSettings();
 
   const { data, isFetching } = useQuery({
     queryKey: ["games", usernameParam],
@@ -78,10 +83,20 @@ export function Home() {
   const games = data?.games ?? EMPTY_GAMES;
   const username = data?.username ?? null;
 
-  const [filter, setFilter] = useState("");
-  const [timeClassFilter, setTimeClassFilter] = useState("all");
+  const [timeClassFilter, setTimeClassFilter] = useState(settings.defaultTimeClass);
   const [resultFilter, setResultFilter] = useState("all");
   const [sortMode, setSortMode] = useState<SortMode>("recent");
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+
+  // Keep the gallery's default time class in sync with the saved preference
+  // until the user overrides it within the session.
+  const settingsTimeClass = settings.defaultTimeClass;
+  const userTouchedFilterRef = useRef(false);
+  useEffect(() => {
+    if (!userTouchedFilterRef.current) {
+      setTimeClassFilter(settingsTimeClass);
+    }
+  }, [settingsTimeClass]);
 
   useEffect(() => {
     document.title = "Chess Analyzer";
@@ -89,13 +104,6 @@ export function Home() {
 
   const sortedFilteredGames = useMemo(() => {
     const filtered = games.filter((g) => {
-      if (filter !== "") {
-        const search = filter.toLowerCase();
-        const matchesWhite = g.white.toLowerCase().includes(search);
-        const matchesBlack = g.black.toLowerCase().includes(search);
-        if (!matchesWhite && !matchesBlack) { return false; }
-      }
-
       if (timeClassFilter !== "all" && g.time_class !== timeClassFilter) {
         return false;
       }
@@ -135,7 +143,39 @@ export function Home() {
       if (bAcc === null) {return -1;}
       return sortMode === "worst" ? aAcc - bAcc : bAcc - aAcc;
     });
-  }, [games, filter, timeClassFilter, resultFilter, sortMode, metricsMap, username]);
+  }, [games, timeClassFilter, resultFilter, sortMode, metricsMap, username]);
+
+  // Reset the visible window whenever the filtered/sorted set changes so the
+  // user always starts from the top of the new list.
+  useEffect(() => {
+    setVisibleCount(PAGE_SIZE);
+  }, [timeClassFilter, resultFilter, sortMode, usernameParam]);
+
+  const visibleGames = sortedFilteredGames.slice(0, visibleCount);
+  const hasMore = visibleCount < sortedFilteredGames.length;
+
+  // Infinite scroll: grow the window when the sentinel scrolls into view.
+  const sentinelRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!hasMore) {return;}
+    const node = sentinelRef.current;
+    if (node === null) {return;}
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) {
+          setVisibleCount((c) => c + PAGE_SIZE);
+        }
+      },
+      { rootMargin: "600px" },
+    );
+    observer.observe(node);
+    return () => { observer.disconnect(); };
+  }, [hasMore]);
+
+  const handleTimeClass = (value: TimeClassFilter) => {
+    userTouchedFilterRef.current = true;
+    setTimeClassFilter(value);
+  };
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-6">
@@ -144,18 +184,11 @@ export function Home() {
           <StatsPanel username={username} />
 
           <div className="mb-5 flex flex-wrap items-center gap-3">
-            <input
-              type="text"
-              placeholder="Search by opponent..."
-              value={filter}
-              onChange={(e) => { setFilter(e.target.value); }}
-              className="w-48 rounded-md border border-line bg-surface px-3 py-1.5 text-sm text-fg placeholder:text-faint focus:outline-none focus:ring-2 focus:ring-accent"
-            />
             <SegmentedControl
               label="Time class"
               options={TIME_CLASS_OPTIONS}
               value={timeClassFilter}
-              onChange={setTimeClassFilter}
+              onChange={handleTimeClass}
             />
             <SegmentedControl
               label="Result"
@@ -175,7 +208,7 @@ export function Home() {
           </div>
 
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
-            {sortedFilteredGames.map((g) => {
+            {visibleGames.map((g) => {
               const m = metricsMap?.[g.id];
               const side = userSideOf(g, username);
               const accuracy =
@@ -204,6 +237,15 @@ export function Home() {
               );
             })}
           </div>
+
+          {hasMore && (
+            <div
+              ref={sentinelRef}
+              className="py-8 text-center text-sm text-faint"
+            >
+              Loading more games…
+            </div>
+          )}
         </>
       )}
 
@@ -216,9 +258,10 @@ export function Home() {
 
       {usernameParam === "" && (
         <div className="py-20 text-center text-muted">
-          <p className="text-lg">Enter a Chess.com username to get started</p>
+          <p className="text-lg">No username set</p>
           <p className="mt-1 text-sm">
-            Recent games will be fetched and cached locally for analysis.
+            Open <span className="font-medium text-fg">Settings</span> (top right) to
+            enter a Chess.com username and load your games.
           </p>
         </div>
       )}
