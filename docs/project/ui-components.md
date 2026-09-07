@@ -10,8 +10,8 @@ File: `client/src/components/AppShell.tsx` + `client/src/components/ui/*`.
 
 `AppShell` is the persistent frame: a top navbar (`h-14`) with brand, nav links
 (`Games / Stats / Drill / Study`, active-state, carry `?username=`), and a settings button (current username +
-gear icon) that opens `SettingsModal`, over a routed `<Outlet/>`. It wraps `UsernameProvider` and
-`SettingsProvider` so every page reads the active user via `useUsername()` and client prefs via `useSettings()`.
+gear icon) that opens `SettingsModal`, over a routed `<Outlet/>`. It wraps `SettingsProvider` so every
+page reads the active user and client prefs via `useSettings()`.
 All routes are children of one layout route in `App.tsx`.
 
 Reusable primitives in `components/ui/` (compose pages from these, don't re-derive markup):
@@ -31,7 +31,7 @@ File: `client/src/components/SettingsModal.tsx` (+ `client/src/context/Settings.
 
 Dialog (`role="dialog"`, aria-label `Settings`) opened from the navbar. Props: `open`, `onClose`. Holds a
 local `draft` of the username (`input[name="username"]`, reseeded each open, auto-focused) and applies it
-via `useUsername().setUsername` on **Save**. The default time-class `SegmentedControl` writes through
+via `useSettings().setUsername` on **Save**. The default time-class `SegmentedControl` writes through
 `useSettings().updateSettings` immediately (no Save needed). Closes on Escape, backdrop click, close button,
 or Cancel. `SettingsProvider` persists `{ defaultTimeClass }` to localStorage key `chess-analyzer-settings`,
 validating the stored value against the allowed set on read.

@@ -374,9 +374,5 @@ function getSlidingRays(pieceType: string): Array<[number, number]> | null {
       return null;
   }
 }
-
-// Re-export types for consumers
-export type { Square, Color };
-
 // Silence unused PRIORITY warning — used for documentation
 void (PRIORITY satisfies readonly Motif[]);

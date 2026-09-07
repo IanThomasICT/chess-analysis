@@ -4,7 +4,7 @@
 
 After completing any set of code changes, always do both steps before considering work done:
 
-1. **Verify** — run `bun run validate` (typecheck + lint + build) and resolve every error. Do not move on with warnings-as-errors or build failures outstanding.
+1. **Verify** — run `bun run validate` (typecheck + lint + knip + build) and resolve every error. Do not move on with warnings-as-errors or build failures outstanding.
 2. **Update docs** — if the changes affect architecture, APIs, component contracts, linting rules, or conventions, update the relevant spec in `docs/` and keep `docs/README.md` in sync. If a discovery was made during the work (e.g. a new constraint, footgun, or pattern), document it in the appropriate spec or in `AGENTS.md` so the knowledge is not lost.
 
 ## Documentation
@@ -24,7 +24,8 @@ bun run build        # Production build (Vite client)
 bun run typecheck    # tsc -b (incremental, cached)
 bun run lint         # ESLint with content-hash cache (<1s warm)
 bun run lint:fix     # ESLint with autofix
-bun run validate     # typecheck + lint + build (~2s warm)
+bun run validate     # typecheck + lint + knip + build (~3s warm)
+bun run knip         # unused files / exports / deps (also part of validate)
 bun run test         # Unit tests (bun:test, tests/ directory) — own :memory:/temp DBs
 bun test tests/pgn.test.ts              # Run a single unit test file
 bun run test:db:clone # Snapshot analysis.db → test.db (VACUUM INTO; safe while metrics writes)

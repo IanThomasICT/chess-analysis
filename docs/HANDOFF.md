@@ -107,3 +107,35 @@ live, matching `GameReviewSummary`.
 - Background Chess.com refresh means brand-new games appear on the *next* gallery
   load, not the current one. Acceptable for a single-user tool; add a manual
   "refresh" affordance if desired.
+
+## Simplification pass (post-review)
+
+`/simplify` over PR #1 (reuse / simplification / efficiency / altitude agents). Applied:
+
+- `server/routes/stats.ts` — `:username` validated once via `stats.use("/stats/:username/*")`;
+  `parseDateRange(c)` + `dateRange(column, from, to)` replace 5 hand-rolled `from`/`to` blocks;
+  `USER_WON` / `USER_LOST` SQL predicates replace 7 copy-pasted CASE fragments; dead
+  `CASE … THEN x ELSE x` in vs-opponent removed; ACL rolling mean is O(n) (was O(n·window)).
+  1379 → 1307 lines, same endpoints, tests unchanged.
+- `MetricsCard.tsx` now exports `ReportHeader` + `CriticalMoveRow` (optional `onSelect`);
+  `GameReviewSummary.tsx` reuses them (was a verbatim copy that had already drifted).
+- `client/src/api.ts` — dropped never-called wrappers (`fetchSessionFatigue`, `fetchCounterplay`,
+  `fetchEndgameConversion`, `metricsExportUrl`) and their client-side types; `fetchByTimeOfDay` /
+  `fetchMotifStats` go through `fetchStat`. Server endpoints kept (R22/R31/R32, tested, URL-reachable).
+- `Username` context merged into `Settings` — one `SettingsProvider`, one `useSettings()` returning
+  `{ username, setUsername, settings, updateSettings }`.
+- `GET /games/:id` checks `metricsAreFresh` before `computeAndStoreMetrics` (was re-deriving the full
+  timeline on every game-detail fetch). `explorer.ts` uses `db.query()` (cached statements).
+
+Considered, not done:
+- Migrations #13/#14 (`players` table added then dropped) could collapse to one — but `analysis.db`
+  is already at user_version 14; collapsing would break the live DB. Leave.
+- `vs_bot IS NOT 1` at 4 read sites is belt-and-suspenders over the import-time skip. Harmless; left.
+- `Stats.tsx` `Loading/Failed` branching per card — readable as is; a `QueryBoundary` wrapper would
+  save ~4 lines × 13 cards. Not worth the indirection.
+- L0→L1→L2 metrics split (`ply-timeline` → `game-metrics` → `metrics-store`): every module has
+  multiple real callers (routes + backfill script); not over-abstraction.
+- e2e not re-run: port 3001 is held by the live `bun run dev` against `analysis.db`.
+- Follow-up: `bunx knip` over the branch removed the unused `minimatch` dep, two dead functions
+  (`getGameAnalysisMultiPV`, `openings._resetForTests`), dead `NAVBAR_H` / `IMPULSE_*` constants, and
+  un-exported ~15 internal-only symbols. Knip is now a dev dep, part of `bun run validate`.

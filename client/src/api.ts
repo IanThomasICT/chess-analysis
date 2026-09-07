@@ -40,7 +40,7 @@ export interface GameMove {
   to: string;
 }
 
-export type Motif =
+type Motif =
   | "hanging_piece"
   | "fork"
   | "pin"
@@ -210,13 +210,7 @@ export async function fetchByTimeOfDay(
   from?: number,
   to?: number,
 ): Promise<TimeOfDayBucket[]> {
-  const r = await fetch(
-    `/api/stats/${encodeURIComponent(username)}/by-time-of-day${dateRangeQuery(from, to)}`,
-  );
-  if (!r.ok) {
-    throw new Error("Failed to fetch time-of-day stats");
-  }
-  return r.json() as Promise<TimeOfDayBucket[]>;
+  return fetchStat<TimeOfDayBucket[]>(username, "by-time-of-day", dateRangeQuery(from, to));
 }
 
 export type WinRateSliceType = "color" | "time_class" | "rating_bucket" | "opening";
@@ -289,13 +283,7 @@ export async function fetchMotifStats(
   from?: number,
   to?: number,
 ): Promise<MotifStat[]> {
-  const r = await fetch(
-    `/api/stats/${encodeURIComponent(username)}/motifs${dateRangeQuery(from, to)}`,
-  );
-  if (!r.ok) {
-    throw new Error("Failed to fetch motif stats");
-  }
-  return r.json() as Promise<MotifStat[]>;
+  return fetchStat<MotifStat[]>(username, "motifs", dateRangeQuery(from, to));
 }
 
 export async function fetchWinRateSlice(
@@ -385,8 +373,8 @@ export async function fetchDrillProgress(username: string): Promise<DrillProgres
 // Extended per-game metrics (game_metrics_ext) + aggregates
 // ---------------------------------------------------------------------------
 
-export type ResultForUser = "win" | "loss" | "draw";
-export type ResultQuality =
+type ResultForUser = "win" | "loss" | "draw";
+type ResultQuality =
   | "swindle_win" | "clean_win"
   | "unlucky_loss" | "clean_loss"
   | "hold_draw" | "even_draw";
@@ -471,23 +459,10 @@ export async function fetchUserMetrics(username: string): Promise<GameMetricSumm
   return r.json() as Promise<GameMetricSummary[]>;
 }
 
-/** URL for the CSV/JSON metrics export (use as an anchor href). */
-export function metricsExportUrl(username: string, format: "csv" | "json"): string {
-  return `/api/metrics/${encodeURIComponent(username)}/export?format=${format}`;
-}
-
 export interface ConsistencyResponse {
   accuracy_stddev: number | null;
   accuracy_mean: number | null;
   games: number;
-}
-
-export interface SessionFatigueBucket {
-  game_in_session: number;
-  games: number;
-  wins: number;
-  win_rate: number;
-  avg_accuracy: number | null;
 }
 
 export interface VsOpponentBucket {
@@ -527,19 +502,6 @@ export interface RepertoireRow {
   avg_out_of_book_ply: number | null;
 }
 
-export interface CounterplayResponse {
-  games_reached_losing: number;
-  saves: number;
-  save_rate: number | null;
-}
-
-export interface EndgameConversionResponse {
-  games_reached_winning: number;
-  conversions: number;
-  conversion_rate: number | null;
-  avg_endgame_accuracy: number | null;
-}
-
 type TimeClass = "bullet" | "blitz" | "rapid" | "daily";
 
 async function fetchStat<T>(username: string, path: string, query = ""): Promise<T> {
@@ -550,10 +512,6 @@ async function fetchStat<T>(username: string, path: string, query = ""): Promise
 
 export async function fetchConsistency(username: string): Promise<ConsistencyResponse> {
   return fetchStat<ConsistencyResponse>(username, "consistency");
-}
-
-export async function fetchSessionFatigue(username: string): Promise<SessionFatigueBucket[]> {
-  return fetchStat<SessionFatigueBucket[]>(username, "session-fatigue");
 }
 
 export async function fetchVsOpponent(
@@ -582,12 +540,4 @@ export async function fetchTpr(username: string, timeClass: TimeClass): Promise<
 
 export async function fetchRepertoire(username: string, color: "white" | "black"): Promise<RepertoireRow[]> {
   return fetchStat<RepertoireRow[]>(username, "repertoire", `?color=${color}`);
-}
-
-export async function fetchCounterplay(username: string): Promise<CounterplayResponse> {
-  return fetchStat<CounterplayResponse>(username, "counterplay");
-}
-
-export async function fetchEndgameConversion(username: string): Promise<EndgameConversionResponse> {
-  return fetchStat<EndgameConversionResponse>(username, "endgame-conversion");
 }

@@ -6,7 +6,7 @@ Read this before touching anything under `client/src/` so new work stays coheren
 Related files: `client/src/app.css`, `client/src/main.tsx`, `client/src/lib/theme-colors.ts`,
 `client/src/components/AppShell.tsx`, `client/src/components/SettingsModal.tsx`,
 `client/src/components/MoveScrubber.tsx`, `client/src/components/GameReviewSummary.tsx`,
-`client/src/context/Username.tsx`, `client/src/context/Settings.tsx`,
+`client/src/context/Settings.tsx`,
 `client/src/components/ui/*`, all `client/src/pages/*`.
 
 ---
@@ -94,9 +94,9 @@ daily→CalendarDays, fallback→Dices). Blunders→AlertTriangle, time trouble�
 A persistent top navbar (`h-14`) over a routed `<Outlet/>` — the single source of navigation. Nav links
 (`Games / Stats / Drill / Study`) carry the active `?username=` and show an active state. The right side is
 a single **settings button** (shows the current username + a gear icon) that opens `SettingsModal` — there
-is no inline username field or `Load` button. `UsernameProvider` (`context/Username.tsx`) centralises the
-`?username=` query param + localStorage; `SettingsProvider` (`context/Settings.tsx`) holds client-only
-prefs (currently `defaultTimeClass`) in localStorage. Pages read both via `useUsername()` / `useSettings()`
+is no inline username field or `Load` button. `SettingsProvider` (`context/Settings.tsx`) owns the active
+username (`?username=` query param, mirrored to localStorage) plus client-only prefs (currently
+`defaultTimeClass`, localStorage). Pages read all of it via one `useSettings()` hook
 without prop-drilling. All routes are children of one layout route in `App.tsx`.
 
 ### Settings modal (`SettingsModal.tsx`)

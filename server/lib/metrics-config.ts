@@ -51,12 +51,6 @@ export const SESSION_BREAK_MIN = 60;
 export const SWINDLE_ACC = 65;
 /** Loss with accuracy at/above this counts as an unlucky loss. */
 export const UNLUCKY_ACC = 80;
-
-// ── Impulse / quick-move detection (D13) ─────────────────────────────────────
-/** A move is "impulsive" when think time < max(IMPULSE_MIN_S, IMPULSE_PCT · baseSeconds). */
-export const IMPULSE_PCT = 0.1;
-export const IMPULSE_MIN_S = 3;
-
 // ── Out-of-book detection (D29) ──────────────────────────────────────────────
 /** Explorer move frequency below this is considered "out of book". */
 export const OUT_OF_BOOK_FREQ_FLOOR = 0.05;

@@ -12,7 +12,6 @@ import {
 import { GameCard } from "../components/GameCard";
 import { StatsPanel } from "../components/StatsPanel";
 import { SegmentedControl } from "../components/ui/SegmentedControl";
-import { useUsername } from "../context/Username";
 import { useSettings, type TimeClassFilter } from "../context/Settings";
 
 type SortMode = "recent" | "worst" | "best";
@@ -54,8 +53,7 @@ function userSideOf(game: GameRow, username: string | null): "white" | "black" {
 }
 
 export function Home() {
-  const { username: usernameParam } = useUsername();
-  const { settings } = useSettings();
+  const { username: usernameParam, settings } = useSettings();
 
   const { data, isFetching } = useQuery({
     queryKey: ["games", usernameParam],

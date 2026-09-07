@@ -5,7 +5,7 @@ export type MoveClass = "best" | "good" | "inaccuracy" | "mistake" | "blunder";
  * Per DESIGN D1: inaccuracy ≥ 0.10, mistake ≥ 0.20, blunder ≥ 0.30.
  * "best" reserved for wpDelta < ~0.02 (Lichess: top move match). Default boundary 0.02.
  */
-export const CLASSIFY_THRESHOLDS = {
+const CLASSIFY_THRESHOLDS = {
   best: 0.02,
   inaccuracy: 0.10,
   mistake: 0.20,

@@ -62,7 +62,7 @@ function userColorOf(game: GameStoreRow): "w" | "b" {
  * Returns null when the game is missing, has too few analyzed positions, or has
  * an unparseable PGN. Pure read — no writes.
  */
-export function deriveMetrics(database: Database, gameId: string): DerivedMetrics | null {
+function deriveMetrics(database: Database, gameId: string): DerivedMetrics | null {
   const game = loadGame(database, gameId);
   if (game === null) {return null;}
 
@@ -106,7 +106,7 @@ export function deriveMetrics(database: Database, gameId: string): DerivedMetric
  * row in a single transaction, stamped with the current metrics version (Q3
  * reference-don't-duplicate: ext holds only the new folds, not per-side basics).
  */
-export function upsertGameMetrics(database: Database, derived: DerivedMetrics): void {
+function upsertGameMetrics(database: Database, derived: DerivedMetrics): void {
   const { game, rank1Rows, ext } = derived;
   const computedAt = Math.floor(Date.now() / 1000);
   const basic = gameMetrics(rank1Rows);
@@ -172,7 +172,7 @@ export function upsertGameMetrics(database: Database, derived: DerivedMetrics): 
  * ON CONFLICT DO NOTHING reconciles with the existing blunder-tag new-queue.
  * Returns the number of rows inserted-or-ignored (attempts).
  */
-export function autoFeedDrill(
+function autoFeedDrill(
   database: Database,
   username: string,
   ext: ExtendedGameMetrics,

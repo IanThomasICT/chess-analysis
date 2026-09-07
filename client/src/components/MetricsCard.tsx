@@ -1,9 +1,10 @@
 import { memo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Clock } from "lucide-react";
+import { Clock, ChevronRight } from "lucide-react";
 import {
   fetchGameMetricDetail,
   type CriticalMove,
+  type GameMetricDetail,
   type MissedConversion,
 } from "../api";
 import { Chip, type ChipTone } from "./ui/Chip";
@@ -59,7 +60,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 function moveClassTone(cls: string): ChipTone {
   if (cls === "blunder") {return "blunder";}
   if (cls === "mistake") {return "mistake";}
-  return "neutral";
+  return "inaccuracy";
 }
 
 function resultTone(result: string): ChipTone {
@@ -74,17 +75,60 @@ function eloDeltaColor(delta: number): string {
   return "text-muted";
 }
 
-function CriticalMoveRow({ move }: { move: CriticalMove }) {
-  const san = move.moveSan ?? "—";
-  const wpBefore = Math.round(move.wpBefore);
-  const wpAfter = Math.round(move.wpAfter);
+/** Result-quality chip + Elo delta + time-trouble flag. Shared by the digest and the full report. */
+export function ReportHeader({ detail }: { detail: GameMetricDetail }) {
+  const qualityLabel = QUALITY_LABELS[detail.resultQuality] ?? detail.resultQuality;
   return (
-    <div className="flex items-center gap-2 text-xs text-fg">
-      <span className="w-10 shrink-0 font-mono font-semibold">{san}</span>
-      <span className="shrink-0 capitalize text-muted">{move.phase}</span>
-      <span className="shrink-0 font-mono text-faint">{wpBefore}%&rarr;{wpAfter}%</span>
-      <Chip tone={moveClassTone(move.moveClass)} className="ml-auto">{move.moveClass}</Chip>
+    <div className="flex flex-wrap items-center gap-1.5">
+      <Chip tone={resultTone(detail.result)}>{qualityLabel}</Chip>
+      {detail.eloDelta !== null && (
+        <span className="flex items-center gap-1 text-xs">
+          <span className="uppercase tracking-wide text-muted">Elo</span>
+          <span className={`font-mono font-semibold ${eloDeltaColor(detail.eloDelta)}`}>
+            {detail.eloDelta > 0 ? "+" : ""}
+            {String(detail.eloDelta)}
+          </span>
+        </span>
+      )}
+      {detail.timeTroubleFlag && (
+        <Chip tone="mistake" icon={<Clock size={11} />}>time trouble</Chip>
+      )}
     </div>
+  );
+}
+
+/** One critical move. Renders as a board-jump button when `onSelect` is given. */
+export function CriticalMoveRow({
+  move,
+  onSelect,
+}: {
+  move: CriticalMove;
+  onSelect?: (plyIndex: number) => void;
+}) {
+  const san = move.moveSan ?? "—";
+  const body = (
+    <>
+      <span className="w-12 shrink-0 font-mono font-semibold text-fg">{san}</span>
+      <span className="shrink-0 capitalize text-muted">{move.phase}</span>
+      <span className="shrink-0 font-mono text-faint">
+        {Math.round(move.wpBefore)}%&rarr;{Math.round(move.wpAfter)}%
+      </span>
+      <Chip tone={moveClassTone(move.moveClass)} className="ml-auto">{move.moveClass}</Chip>
+    </>
+  );
+  if (onSelect === undefined) {
+    return <div className="flex items-center gap-2 text-xs text-fg">{body}</div>;
+  }
+  return (
+    <button
+      type="button"
+      onClick={() => { onSelect(move.plyIndex); }}
+      className="flex w-full items-center gap-2 rounded-md border border-line bg-canvas px-2 py-1.5 text-left text-xs transition-colors hover:border-accent hover:bg-raised"
+      title={`Jump to ${san}`}
+    >
+      {body}
+      <ChevronRight size={14} className="shrink-0 text-muted" />
+    </button>
   );
 }
 
@@ -111,18 +155,6 @@ export const MetricsCard = memo(function MetricsCard({ gameId }: Props) {
   if (isError) {return <p className="text-sm text-muted">No report available.</p>;}
 
   const detail = data;
-  const qualityLabel = QUALITY_LABELS[detail.resultQuality] ?? detail.resultQuality;
-
-  const qualityTone = resultTone(detail.result);
-
-  const eloDeltaNode =
-    detail.eloDelta !== null ? (
-      <span className={`font-mono text-sm font-semibold ${eloDeltaColor(detail.eloDelta)}`}>
-        {detail.eloDelta > 0 ? "+" : ""}
-        {String(detail.eloDelta)}
-      </span>
-    ) : null;
-
   const phases = detail.phases;
   const hasPhaseTime =
     phases.timeOpeningS !== null ||
@@ -134,19 +166,7 @@ export const MetricsCard = memo(function MetricsCard({ gameId }: Props) {
 
   return (
     <div className="space-y-3">
-      {/* Header: quality + elo delta */}
-      <div className="flex flex-wrap items-center gap-2">
-        <Chip tone={qualityTone}>{qualityLabel}</Chip>
-        {eloDeltaNode !== null && (
-          <div className="flex items-center gap-1">
-            <span className="text-xs uppercase tracking-wide text-muted">Elo</span>
-            {eloDeltaNode}
-          </div>
-        )}
-        {detail.timeTroubleFlag && (
-          <Chip tone="mistake" icon={<Clock size={11} />}>time trouble</Chip>
-        )}
-      </div>
+      <ReportHeader detail={detail} />
 
       <Section title="Phase Accuracy">
         <Row label="Opening" value={fmtPct(detail.accuracyOpening)} />

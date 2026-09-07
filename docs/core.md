@@ -266,7 +266,7 @@ client/
     app.css                # Tailwind v4 @theme tokens (single dark theme) + base
     api.ts                 # Typed fetch wrappers + shared interfaces
     context/
-      Username.tsx         # UsernameProvider + useUsername() — ?username= + localStorage
+      Settings.tsx         # SettingsProvider + useSettings() — ?username= + localStorage prefs
     lib/
       theme-colors.ts      # Chart hex palette mirroring app.css tokens (uPlot can't read Tailwind)
       classify.ts          # re-export of shared/classify

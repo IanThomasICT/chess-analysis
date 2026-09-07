@@ -24,7 +24,7 @@ import { StatTile } from "../components/ui/StatTile";
 import { SegmentedControl } from "../components/ui/SegmentedControl";
 import { Tabs } from "../components/ui/Tabs";
 import { HEATMAP_RGB } from "../lib/theme-colors";
-import { useUsername } from "../context/Username";
+import { useSettings } from "../context/Settings";
 
 type Section = "overview" | "trends" | "openings" | "patterns";
 
@@ -51,7 +51,7 @@ function Failed() {
 }
 
 export function Stats() {
-  const { username } = useUsername();
+  const { username } = useSettings();
   const [section, setSection] = useState<Section>("overview");
 
   if (username === "") {

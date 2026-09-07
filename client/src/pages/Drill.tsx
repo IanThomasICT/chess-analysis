@@ -8,7 +8,7 @@ import {
   type AttemptResponse,
 } from "../api";
 import { ChessBoard } from "../components/ChessBoard";
-import { useUsername } from "../context/Username";
+import { useSettings } from "../context/Settings";
 
 interface SessionStats {
   attempted: number;
@@ -16,7 +16,7 @@ interface SessionStats {
 }
 
 export function Drill() {
-  const { username } = useUsername();
+  const { username } = useSettings();
   const queryClient = useQueryClient();
 
   const { data: queue, isPending, isError } = useQuery({

@@ -1,4 +1,4 @@
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import type { Database } from "bun:sqlite";
 import { db } from "../lib/db";
 import {
@@ -12,7 +12,39 @@ const USERNAME_PATTERN = /^[a-zA-Z0-9_-]{1,50}$/;
 
 const stats = new Hono();
 
-export interface SideStats {
+/** Validate :username once for every stats route. */
+stats.use("/stats/:username/*", async (c, next) => {
+  if (!USERNAME_PATTERN.test(c.req.param("username"))) {
+    return c.json({ error: "Invalid username format" }, 400);
+  }
+  await next();
+});
+
+/** SQL predicate: the user (bound twice, lower-cased) won game `g`. */
+const USER_WON = "((lower(g.white) = ? AND g.result = '1-0') OR (lower(g.black) = ? AND g.result = '0-1'))";
+/** SQL predicate: the user (bound twice, lower-cased) lost game `g`. */
+const USER_LOST = "((lower(g.white) = ? AND g.result = '0-1') OR (lower(g.black) = ? AND g.result = '1-0'))";
+
+/** Optional epoch-second window as an `AND ...` SQL suffix plus its binds. */
+function dateRange(column: string, from?: number, to?: number): { clause: string; binds: number[] } {
+  const parts: string[] = [];
+  const binds: number[] = [];
+  if (from !== undefined) { parts.push(`${column} >= ?`); binds.push(from); }
+  if (to !== undefined) { parts.push(`${column} <= ?`); binds.push(to); }
+  return { clause: parts.length > 0 ? `AND ${parts.join(" AND ")}` : "", binds };
+}
+
+/** Parse optional `from`/`to` epoch-second query params. */
+function parseDateRange(c: Context): { from?: number; to?: number } {
+  const fromStr = c.req.query("from");
+  const toStr = c.req.query("to");
+  return {
+    from: fromStr !== undefined ? parseInt(fromStr, 10) : undefined,
+    to: toStr !== undefined ? parseInt(toStr, 10) : undefined,
+  };
+}
+
+interface SideStats {
   games: number;
   wins: number;
   draws: number;
@@ -48,13 +80,9 @@ export function computeBySide(database: Database, username: string): BySideRespo
       SELECT
         CASE WHEN lower(g.white) = ? THEN 'white' ELSE 'black' END AS side,
         COUNT(*) AS games,
-        SUM(CASE
-          WHEN (lower(g.white) = ? AND g.result = '1-0') OR (lower(g.black) = ? AND g.result = '0-1')
-          THEN 1 ELSE 0 END) AS wins,
+        SUM(CASE WHEN ${USER_WON} THEN 1 ELSE 0 END) AS wins,
         SUM(CASE WHEN g.result = '1/2-1/2' THEN 1 ELSE 0 END) AS draws,
-        SUM(CASE
-          WHEN (lower(g.white) = ? AND g.result = '0-1') OR (lower(g.black) = ? AND g.result = '1-0')
-          THEN 1 ELSE 0 END) AS losses,
+        SUM(CASE WHEN ${USER_LOST} THEN 1 ELSE 0 END) AS losses,
         AVG(CASE WHEN lower(g.white) = ? THEN gm.accuracy_white ELSE gm.accuracy_black END) AS avg_accuracy,
         AVG(CASE WHEN lower(g.white) = ? THEN gm.blunders_white ELSE gm.blunders_black END) AS avg_blunders
       FROM games g
@@ -94,9 +122,6 @@ export function computeBySide(database: Database, username: string): BySideRespo
 
 stats.get("/stats/:username/by-side", (c) => {
   const username = c.req.param("username");
-  if (!USERNAME_PATTERN.test(username)) {
-    return c.json({ error: "Invalid username format" }, 400);
-  }
   return c.json(computeBySide(db, username));
 });
 
@@ -138,9 +163,6 @@ export function computeEloTrend(
 stats.get("/stats/:username/elo-trend", (c) => {
   const username = c.req.param("username");
   const timeClass = c.req.query("time_class") ?? "blitz";
-  if (!USERNAME_PATTERN.test(username)) {
-    return c.json({ error: "Invalid username format" }, 400);
-  }
   if (!TIME_CLASS_PATTERN.test(timeClass)) {
     return c.json({ error: "Invalid time_class" }, 400);
   }
@@ -192,9 +214,6 @@ export function computeAccuracyTrend(
 stats.get("/stats/:username/accuracy-trend", (c) => {
   const username = c.req.param("username");
   const timeClass = c.req.query("time_class") ?? "blitz";
-  if (!USERNAME_PATTERN.test(username)) {
-    return c.json({ error: "Invalid username format" }, 400);
-  }
   if (!TIME_CLASS_PATTERN.test(timeClass)) {
     return c.json({ error: "Invalid time_class" }, 400);
   }
@@ -242,11 +261,7 @@ export function computeByTimeOfDay(
   to?: number,
 ): TimeOfDayBucket[] {
   const lower = username.toLowerCase();
-  const dateClauses: string[] = [];
-  const dateBinds: number[] = [];
-  if (from !== undefined) { dateClauses.push("end_time >= ?"); dateBinds.push(from); }
-  if (to !== undefined) { dateClauses.push("end_time <= ?"); dateBinds.push(to); }
-  const dateClause = dateClauses.length > 0 ? `AND ${dateClauses.join(" AND ")}` : "";
+  const { clause: dateClause, binds: dateBinds } = dateRange("end_time", from, to);
   const rows = database
     .prepare(`
       SELECT end_time, result, white, black FROM games
@@ -309,13 +324,7 @@ export function computeByTimeOfDay(
 
 stats.get("/stats/:username/by-time-of-day", (c) => {
   const username = c.req.param("username");
-  if (!USERNAME_PATTERN.test(username)) {
-    return c.json({ error: "Invalid username format" }, 400);
-  }
-  const fromStr = c.req.query("from");
-  const toStr = c.req.query("to");
-  const from = fromStr !== undefined ? parseInt(fromStr, 10) : undefined;
-  const to = toStr !== undefined ? parseInt(toStr, 10) : undefined;
+  const { from, to } = parseDateRange(c);
   return c.json(computeByTimeOfDay(db, username, from, to));
 });
 
@@ -398,13 +407,9 @@ export function computeWinRateSlice(
 
   const accuracyExpr = "CASE WHEN lower(g.white) = ? THEN gm.accuracy_white ELSE gm.accuracy_black END";
 
-  const winsExpr = `SUM(CASE
-    WHEN (lower(g.white) = ? AND g.result = '1-0') OR (lower(g.black) = ? AND g.result = '0-1')
-    THEN 1 ELSE 0 END)`;
+  const winsExpr = `SUM(CASE WHEN ${USER_WON} THEN 1 ELSE 0 END)`;
   const drawsExpr = `SUM(CASE WHEN g.result = '1/2-1/2' THEN 1 ELSE 0 END)`;
-  const lossesExpr = `SUM(CASE
-    WHEN (lower(g.white) = ? AND g.result = '0-1') OR (lower(g.black) = ? AND g.result = '1-0')
-    THEN 1 ELSE 0 END)`;
+  const lossesExpr = `SUM(CASE WHEN ${USER_LOST} THEN 1 ELSE 0 END)`;
 
   const whereClauses: string[] = [`lower(g.username) = ?`];
   const whereBinds: Array<string | number> = [lower];
@@ -461,18 +466,12 @@ export function computeWinRateSlice(
 
 stats.get("/stats/:username/win-rate", (c) => {
   const username = c.req.param("username");
-  if (!USERNAME_PATTERN.test(username)) {
-    return c.json({ error: "Invalid username format" }, 400);
-  }
   const sliceParam = c.req.query("slice") ?? "color";
   if (!SLICE_PATTERN.test(sliceParam)) {
     return c.json({ error: "Invalid slice" }, 400);
   }
   const slice = sliceParam as Slice;
-  const fromStr = c.req.query("from");
-  const toStr = c.req.query("to");
-  const from = fromStr !== undefined ? parseInt(fromStr, 10) : undefined;
-  const to = toStr !== undefined ? parseInt(toStr, 10) : undefined;
+  const { from, to } = parseDateRange(c);
   return c.json(computeWinRateSlice(db, username, slice, from, to));
 });
 
@@ -506,11 +505,7 @@ export function computeMotifStats(
   to?: number,
 ): MotifStat[] {
   const lower = username.toLowerCase();
-  const whereDate: string[] = [];
-  const bindDate: number[] = [];
-  if (from !== undefined) { whereDate.push("g.end_time >= ?"); bindDate.push(from); }
-  if (to !== undefined) { whereDate.push("g.end_time <= ?"); bindDate.push(to); }
-  const dateClause = whereDate.length > 0 ? `AND ${whereDate.join(" AND ")}` : "";
+  const { clause: dateClause, binds: bindDate } = dateRange("g.end_time", from, to);
 
   const rows = database
     .prepare(`
@@ -536,13 +531,7 @@ export function computeMotifStats(
 
 stats.get("/stats/:username/motifs", (c) => {
   const username = c.req.param("username");
-  if (!USERNAME_PATTERN.test(username)) {
-    return c.json({ error: "Invalid username format" }, 400);
-  }
-  const fromStr = c.req.query("from");
-  const toStr = c.req.query("to");
-  const from = fromStr !== undefined ? parseInt(fromStr, 10) : undefined;
-  const to = toStr !== undefined ? parseInt(toStr, 10) : undefined;
+  const { from, to } = parseDateRange(c);
   return c.json(computeMotifStats(db, username, from, to));
 });
 
@@ -635,9 +624,6 @@ export function computeDrillProgress(database: Database, username: string): Dril
 
 stats.get("/stats/:username/drill-progress", (c) => {
   const username = c.req.param("username");
-  if (!USERNAME_PATTERN.test(username)) {
-    return c.json({ error: "Invalid username format" }, 400);
-  }
   return c.json(computeDrillProgress(db, username));
 });
 
@@ -692,9 +678,6 @@ export function computeConsistency(
 
 stats.get("/stats/:username/consistency", (c) => {
   const username = c.req.param("username");
-  if (!USERNAME_PATTERN.test(username)) {
-    return c.json({ error: "Invalid username format" }, 400);
-  }
   return c.json(computeConsistency(db, username));
 });
 
@@ -787,9 +770,6 @@ export function computeSessionFatigue(
 
 stats.get("/stats/:username/session-fatigue", (c) => {
   const username = c.req.param("username");
-  if (!USERNAME_PATTERN.test(username)) {
-    return c.json({ error: "Invalid username format" }, 400);
-  }
   return c.json(computeSessionFatigue(db, username));
 });
 
@@ -824,11 +804,7 @@ export function computeVsOpponent(
   to?: number,
 ): VsOpponentBucket[] {
   const lower = username.toLowerCase();
-  const dateClauses: string[] = [];
-  const dateBinds: number[] = [];
-  if (from !== undefined) { dateClauses.push("g.end_time >= ?"); dateBinds.push(from); }
-  if (to !== undefined) { dateClauses.push("g.end_time <= ?"); dateBinds.push(to); }
-  const dateClause = dateClauses.length > 0 ? `AND ${dateClauses.join(" AND ")}` : "";
+  const { clause: dateClause, binds: dateBinds } = dateRange("g.end_time", from, to);
   const rows = database
     .prepare(`
       SELECT
@@ -845,11 +821,9 @@ export function computeVsOpponent(
             END
         END AS bucket,
         COUNT(*) AS games,
-        SUM(CASE
-          WHEN (lower(g.white) = ? AND g.result = '1-0') OR (lower(g.black) = ? AND g.result = '0-1')
-          THEN 1 ELSE 0 END) AS wins,
+        SUM(CASE WHEN ${USER_WON} THEN 1 ELSE 0 END) AS wins,
         AVG(CASE WHEN lower(g.white) = ? THEN gm.accuracy_white ELSE gm.accuracy_black END) AS avg_accuracy,
-        AVG(CASE WHEN lower(g.white) = ? THEN gme.acl_middlegame ELSE gme.acl_middlegame END) AS avg_acl_middlegame
+        AVG(gme.acl_middlegame) AS avg_acl_middlegame
       FROM games g
       LEFT JOIN game_metrics gm ON g.id = gm.game_id
       LEFT JOIN game_metrics_ext gme ON g.id = gme.game_id
@@ -857,7 +831,7 @@ export function computeVsOpponent(
       GROUP BY bucket
       ORDER BY games DESC
     `)
-    .all(lower, lower, lower, lower, lower, lower, lower, lower, lower, lower, ...dateBinds) as VsOpponentRow[];
+    .all(lower, lower, lower, lower, lower, lower, lower, lower, lower, ...dateBinds) as VsOpponentRow[];
 
   return rows.map((r) => ({
     bucket: r.bucket,
@@ -870,13 +844,7 @@ export function computeVsOpponent(
 
 stats.get("/stats/:username/vs-opponent", (c) => {
   const username = c.req.param("username");
-  if (!USERNAME_PATTERN.test(username)) {
-    return c.json({ error: "Invalid username format" }, 400);
-  }
-  const fromStr = c.req.query("from");
-  const toStr = c.req.query("to");
-  const from = fromStr !== undefined ? parseInt(fromStr, 10) : undefined;
-  const to = toStr !== undefined ? parseInt(toStr, 10) : undefined;
+  const { from, to } = parseDateRange(c);
   return c.json(computeVsOpponent(db, username, from, to));
 });
 
@@ -922,21 +890,17 @@ export function computeAclTrend(
     acl: r.white.toLowerCase() === lower ? r.acl_white : r.acl_black,
   }));
 
+  let sum = 0;
   return perGame.map((pt, i) => {
-    const start = Math.max(0, i - TREND_WINDOW_GAMES + 1);
-    const window = perGame.slice(start, i + 1);
-    const sum = window.reduce((acc, p) => acc + p.acl, 0);
-    const rolling = sum / window.length;
-    return { t: pt.t, acl: pt.acl, rolling };
+    sum += pt.acl;
+    if (i >= TREND_WINDOW_GAMES) { sum -= perGame[i - TREND_WINDOW_GAMES].acl; }
+    return { t: pt.t, acl: pt.acl, rolling: sum / Math.min(i + 1, TREND_WINDOW_GAMES) };
   });
 }
 
 stats.get("/stats/:username/acl-trend", (c) => {
   const username = c.req.param("username");
   const timeClass = c.req.query("time_class") ?? "blitz";
-  if (!USERNAME_PATTERN.test(username)) {
-    return c.json({ error: "Invalid username format" }, 400);
-  }
   if (!TIME_CLASS_PATTERN.test(timeClass)) {
     return c.json({ error: "Invalid time_class" }, 400);
   }
@@ -973,17 +937,9 @@ export function computeLeakClosure(
 ): LeakClosureRow[] {
   const lower = username.toLowerCase();
 
-  const dateClauses: string[] = [];
-  const dateBinds: number[] = [];
-  if (from !== undefined) { dateClauses.push("g.end_time >= ?"); dateBinds.push(from); }
-  if (to !== undefined) { dateClauses.push("g.end_time <= ?"); dateBinds.push(to); }
-  const dateClauseG = dateClauses.length > 0 ? `AND ${dateClauses.join(" AND ")}` : "";
-
-  // Median bound (unprefixed `end_time` for the bare `games` query).
-  const medianDateClauses: string[] = [];
-  if (from !== undefined) { medianDateClauses.push("end_time >= ?"); }
-  if (to !== undefined) { medianDateClauses.push("end_time <= ?"); }
-  const medianDateClause = medianDateClauses.length > 0 ? `AND ${medianDateClauses.join(" AND ")}` : "";
+  const { clause: dateClauseG, binds: dateBinds } = dateRange("g.end_time", from, to);
+  // Same window, unprefixed for the bare `games` median query.
+  const { clause: medianDateClause } = dateRange("end_time", from, to);
 
   // Find median end_time for the windowed set of user games.
   const medianRow = database
@@ -1045,13 +1001,7 @@ export function computeLeakClosure(
 
 stats.get("/stats/:username/leak-closure", (c) => {
   const username = c.req.param("username");
-  if (!USERNAME_PATTERN.test(username)) {
-    return c.json({ error: "Invalid username format" }, 400);
-  }
-  const fromStr = c.req.query("from");
-  const toStr = c.req.query("to");
-  const from = fromStr !== undefined ? parseInt(fromStr, 10) : undefined;
-  const to = toStr !== undefined ? parseInt(toStr, 10) : undefined;
+  const { from, to } = parseDateRange(c);
   return c.json(computeLeakClosure(db, username, from, to));
 });
 
@@ -1134,9 +1084,7 @@ export function computeTpr(
     .prepare(`
       SELECT
         COUNT(*) AS games,
-        SUM(CASE
-          WHEN (lower(g.white) = ? AND g.result = '1-0') OR (lower(g.black) = ? AND g.result = '0-1')
-          THEN 1 ELSE 0 END) AS wins,
+        SUM(CASE WHEN ${USER_WON} THEN 1 ELSE 0 END) AS wins,
         SUM(CASE WHEN g.result = '1/2-1/2' THEN 1 ELSE 0 END) AS draws,
         AVG(CASE WHEN lower(g.white) = ? THEN g.black_elo ELSE g.white_elo END) AS avg_opponent_elo
       FROM games g
@@ -1167,9 +1115,6 @@ export function computeTpr(
 stats.get("/stats/:username/tpr", (c) => {
   const username = c.req.param("username");
   const timeClass = c.req.query("time_class") ?? "blitz";
-  if (!USERNAME_PATTERN.test(username)) {
-    return c.json({ error: "Invalid username format" }, 400);
-  }
   if (!TIME_CLASS_PATTERN.test(timeClass)) {
     return c.json({ error: "Invalid time_class" }, 400);
   }
@@ -1219,9 +1164,7 @@ export function computeRepertoire(
         COALESCE(g.eco, 'unknown') AS eco,
         g.opening,
         COUNT(*) AS games,
-        SUM(CASE
-          WHEN (lower(g.white) = ? AND g.result = '1-0') OR (lower(g.black) = ? AND g.result = '0-1')
-          THEN 1 ELSE 0 END) AS wins,
+        SUM(CASE WHEN ${USER_WON} THEN 1 ELSE 0 END) AS wins,
         AVG(${accuracyCol}) AS avg_accuracy,
         AVG(gme.out_of_book_ply) AS avg_out_of_book_ply
       FROM games g
@@ -1245,9 +1188,6 @@ export function computeRepertoire(
 
 stats.get("/stats/:username/repertoire", (c) => {
   const username = c.req.param("username");
-  if (!USERNAME_PATTERN.test(username)) {
-    return c.json({ error: "Invalid username format" }, 400);
-  }
   const colorParam = c.req.query("color") ?? "white";
   if (!COLOR_PATTERN.test(colorParam)) {
     return c.json({ error: "Invalid color" }, 400);
@@ -1284,11 +1224,7 @@ export function computeCounterplay(
     .prepare(`
       SELECT
         COUNT(*) AS games_reached_losing,
-        SUM(CASE
-          WHEN (lower(g.white) = ? AND g.result = '1-0')
-            OR (lower(g.black) = ? AND g.result = '0-1')
-            OR g.result = '1/2-1/2'
-          THEN 1 ELSE 0 END) AS saves
+        SUM(CASE WHEN ${USER_WON} OR g.result = '1/2-1/2' THEN 1 ELSE 0 END) AS saves
       FROM games g
       JOIN game_metrics_ext gme ON g.id = gme.game_id
       WHERE lower(g.username) = ?
@@ -1308,9 +1244,6 @@ export function computeCounterplay(
 
 stats.get("/stats/:username/counterplay", (c) => {
   const username = c.req.param("username");
-  if (!USERNAME_PATTERN.test(username)) {
-    return c.json({ error: "Invalid username format" }, 400);
-  }
   return c.json(computeCounterplay(db, username));
 });
 
@@ -1345,10 +1278,7 @@ export function computeEndgameConversion(
     .prepare(`
       SELECT
         COUNT(*) AS games_reached_winning,
-        SUM(CASE
-          WHEN (lower(g.white) = ? AND g.result = '1-0')
-            OR (lower(g.black) = ? AND g.result = '0-1')
-          THEN 1 ELSE 0 END) AS conversions,
+        SUM(CASE WHEN ${USER_WON} THEN 1 ELSE 0 END) AS conversions,
         AVG(gme.accuracy_endgame) AS avg_endgame_accuracy
       FROM games g
       JOIN game_metrics_ext gme ON g.id = gme.game_id
@@ -1370,9 +1300,6 @@ export function computeEndgameConversion(
 
 stats.get("/stats/:username/endgame-conversion", (c) => {
   const username = c.req.param("username");
-  if (!USERNAME_PATTERN.test(username)) {
-    return c.json({ error: "Invalid username format" }, 400);
-  }
   return c.json(computeEndgameConversion(db, username));
 });
 

@@ -7,7 +7,7 @@ import { isGameAnalyzed, getGameAnalysis, type AnalysisRow } from "../lib/engine
 import { parseEloHeader } from "../lib/backfill";
 import { classifyOpening } from "../lib/openings";
 import { gameMetrics } from "../lib/metrics";
-import { computeAndStoreMetrics } from "../lib/metrics-store";
+import { computeAndStoreMetrics, metricsAreFresh } from "../lib/metrics-store";
 
 const BULK_COMPUTE_LIMIT = 20;
 
@@ -288,7 +288,7 @@ games.get("/games/:gameId", (c) => {
   // Lazy ongoing capture (R35): if analyzed, ensure extended metrics are current.
   // Rebuilds from existing analysis rows only — never re-runs the engine — and
   // no-ops when the cache is already fresh. Best-effort: never fail the fetch.
-  if (analyzed) {
+  if (analyzed && !metricsAreFresh(db, gameId)) {
     try {
       computeAndStoreMetrics(db, gameId);
     } catch {

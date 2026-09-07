@@ -66,8 +66,10 @@ The **Patterns** section is windowed to the **last `PATTERN_WINDOW_DAYS` (60) da
 the motifs / leak-closure / vs-opponent / rating-bucket win-rate / time-of-day requests. This keeps
 weakness data aligned with the player's current level instead of mixing in much older, lower-rated games.
 The corresponding `compute*` helpers in `server/routes/stats.ts` accept optional `from`/`to` epoch bounds
-(`motifs` and the rating-bucket `win-rate` slice already did; `leak-closure`, `vs-opponent`, and
-`by-time-of-day` gained them). Other sections remain full-history. Reached from the persistent top
+via the shared `parseDateRange(c)` / `dateRange(column, from, to)` helpers at the top of the file; add a
+window to any other aggregate by threading those two calls through. `:username` is validated once by a
+`stats.use("/stats/:username/*")` middleware, and the user-won/lost SQL predicates are the `USER_WON` /
+`USER_LOST` constants. Other sections remain full-history. Reached from the persistent top
 navbar's "Stats" link (carries `?username=`).
 
 ## Migrations introduced in Phase 2

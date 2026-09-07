@@ -9,12 +9,8 @@ import {
   UserRound,
   type LucideIcon,
 } from "lucide-react";
-import { UsernameProvider, useUsername } from "../context/Username";
-import { SettingsProvider } from "../context/Settings";
+import { SettingsProvider, useSettings } from "../context/Settings";
 import { SettingsModal } from "./SettingsModal";
-
-/** Navbar height — Analysis sizes its no-scroll layout to `100vh - 3.5rem`. */
-export const NAVBAR_H = "3.5rem";
 
 interface NavItem {
   to: string;
@@ -32,7 +28,7 @@ const NAV_ITEMS: NavItem[] = [
 ];
 
 function Navbar() {
-  const { username } = useUsername();
+  const { username } = useSettings();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const search =
     username !== "" ? `?username=${encodeURIComponent(username)}` : "";
@@ -91,15 +87,13 @@ function Navbar() {
 /** Persistent app frame: top navbar + routed page outlet. */
 export function AppShell() {
   return (
-    <UsernameProvider>
-      <SettingsProvider>
-        <div className="flex min-h-screen flex-col bg-canvas">
-          <Navbar />
-          <main className="min-h-0 flex-1">
-            <Outlet />
-          </main>
-        </div>
-      </SettingsProvider>
-    </UsernameProvider>
+    <SettingsProvider>
+      <div className="flex min-h-screen flex-col bg-canvas">
+        <Navbar />
+        <main className="min-h-0 flex-1">
+          <Outlet />
+        </main>
+      </div>
+    </SettingsProvider>
   );
 }

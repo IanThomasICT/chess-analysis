@@ -1,7 +1,7 @@
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 
-export interface OpeningEntry {
+interface OpeningEntry {
   eco: string;
   name: string;
   tokens: string[]; // SAN moves, stripped of move numbers
@@ -83,10 +83,4 @@ export function classifyOpening(
     }
   }
   return null;
-}
-
-/** For tests — clear the lookup so re-load can be tested. */
-export function _resetForTests(): void {
-  LOOKUP = [];
-  loaded = false;
 }

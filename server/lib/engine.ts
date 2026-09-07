@@ -126,7 +126,7 @@ interface Score {
   mate: number | null;
 }
 
-export interface AnalysisResult {
+interface AnalysisResult {
   multipvRank: number;
   score: Score;
   bestMove: string;
@@ -589,23 +589,4 @@ export interface AnalysisRow {
 
 export interface AnalysisRowMPV extends AnalysisRow {
   multipv_rank: number;
-}
-
-/**
- * Get cached analysis for a game including MultiPV ranks (1..maxRank), ordered by
- * (move_index, multipv_rank). Used by the metrics timeline builder, which needs
- * rank-2 for criticality (D9). The rank-1-only `getGameAnalysis` stays untouched.
- */
-export function getGameAnalysisMultiPV(
-  gameId: string,
-  maxRank = 3,
-): AnalysisRowMPV[] {
-  return db
-    .prepare(
-      `SELECT move_index, multipv_rank, fen, fen_key, move_san, score_cp, score_mate, best_move, pv, depth
-         FROM analysis
-        WHERE game_id = ? AND multipv_rank <= ?
-        ORDER BY move_index, multipv_rank`,
-    )
-    .all(gameId, maxRank) as AnalysisRowMPV[];
 }

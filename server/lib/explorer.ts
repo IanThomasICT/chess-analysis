@@ -88,7 +88,7 @@ export function positionFrequency(fenKey: string, move: string): number | null {
   let total = totalsCache.get(fenKey);
   if (total === undefined) {
     const sum = database
-      .prepare(`SELECT SUM(count) AS total FROM ${EXPLORER_TABLE} WHERE fen_key = ?`)
+      .query(`SELECT SUM(count) AS total FROM ${EXPLORER_TABLE} WHERE fen_key = ?`)
       .get(fenKey) as SumRow | null;
     total = sum?.total ?? 0;
     totalsCache.set(fenKey, total);
@@ -97,7 +97,7 @@ export function positionFrequency(fenKey: string, move: string): number | null {
 
   const mv = normalizeSan(move);
   const row = database
-    .prepare(
+    .query(
       `SELECT count FROM ${EXPLORER_TABLE} WHERE fen_key = ? AND move = ?`,
     )
     .get(fenKey, mv) as CountRow | null;

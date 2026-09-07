@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 import { X } from "lucide-react";
-import { useUsername } from "../context/Username";
 import { useSettings, type TimeClassFilter } from "../context/Settings";
 import { SegmentedControl } from "./ui/SegmentedControl";
 
@@ -19,8 +18,7 @@ const TIME_CLASS_OPTIONS: Array<{ value: TimeClassFilter; label: string }> = [
 
 /** Settings dialog — sets the Chess.com username and gallery preferences. */
 export function SettingsModal({ open, onClose }: Props) {
-  const { username, setUsername } = useUsername();
-  const { settings, updateSettings } = useSettings();
+  const { username, setUsername, settings, updateSettings } = useSettings();
   const [draft, setDraft] = useState(username);
   const inputRef = useRef<HTMLInputElement>(null);
 

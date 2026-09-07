@@ -80,12 +80,12 @@ A second `useQuery` calls `fetchBulkMetrics(username)` against `/api/games/metri
 
 ### Username persistence
 
-The active username now lives in the shared `UsernameProvider` (`client/src/context/Username.tsx`),
+The active username now lives in the shared `SettingsProvider` (`client/src/context/Settings.tsx`),
 rendered by `AppShell`. It mirrors the `?username=` query param to `localStorage`
 (`"chess-analyzer-username"`) and, on a cold load with no param, restores the cached value via
 `setSearchParams({ replace: true })`. The username is set through the **settings dialog** (gear button in
 the navbar, see `SettingsModal.tsx`) — there is no inline input or `Load` button. Pages read the value with
-`useUsername()`. (Home no longer owns this logic.)
+`useSettings()`. (Home no longer owns this logic.)
 
 ### Client Filters + Sort
 

@@ -20,7 +20,7 @@ The app uses **react-router v7 in library mode** (CSR, not framework mode). `mai
 | `/study` | `Study` | In-app glossary |
 
 Navigation between pages and the active `?username=` are owned by the navbar (see
-[ui-ux.md](ui-ux.md)); pages read the username via `useUsername()`. There is no server-side rendering —
+[ui-ux.md](ui-ux.md)); pages read the username via `useSettings()`. There is no server-side rendering —
 the Vite SPA handles all routing client-side.
 
 ## API Routes (Server)

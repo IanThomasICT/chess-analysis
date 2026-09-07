@@ -3,7 +3,7 @@ import { pgnFinalClocks, pgnHeaders } from "./pgn";
 
 // DB path is configurable so e2e/test runs can target an isolated file
 // (e.g. DATABASE_PATH=test.db) without touching the production analysis.db.
-export const DB_PATH = process.env.DATABASE_PATH ?? "analysis.db";
+const DB_PATH = process.env.DATABASE_PATH ?? "analysis.db";
 
 export const db = new Database(DB_PATH, { create: true });
 

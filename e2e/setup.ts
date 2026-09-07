@@ -1,7 +1,7 @@
 import { chromium, type Browser, type BrowserContext, type Page } from "playwright-core";
 import { beforeAll, afterAll, beforeEach } from "bun:test";
 
-export const BASE_URL = "http://localhost:5173";
+const BASE_URL = "http://localhost:5173";
 
 let browser: Browser | null = null;
 
