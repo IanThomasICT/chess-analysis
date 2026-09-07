@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useState, useMemo, type ReactNode } from "react";
 import { Link } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -34,6 +34,10 @@ const SECTIONS = [
   { id: "openings", label: "Openings" },
   { id: "patterns", label: "Patterns" },
 ];
+
+/** Patterns reflect only recent play — old games predate your current level. */
+const PATTERN_WINDOW_DAYS = 60;
+const DAY_S = 86_400;
 
 const TIME_CLASSES = ["bullet", "blitz", "rapid", "daily"] as const;
 type TimeClass = (typeof TIME_CLASSES)[number];
@@ -394,27 +398,38 @@ function RepertoireCard({ username }: { username: string }) {
 // =====================================================================
 
 function PatternsSection({ username }: { username: string }) {
+  // Stable lower bound for the lifetime of this section — avoids refetch churn.
+  const from = useMemo(
+    () => Math.floor(Date.now() / 1000) - PATTERN_WINDOW_DAYS * DAY_S,
+    [],
+  );
   return (
-    <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-      <MotifsCard username={username} />
-      <LeakClosureCard username={username} />
-      <Card title="By opponent rating">
-        <VsOpponentList username={username} />
-      </Card>
-      <Card title="Win rate by rating bucket">
-        <SliceList username={username} slice="rating_bucket" />
-      </Card>
-      <Card title="Time of day" className="lg:col-span-2">
-        <TimeOfDayGrid username={username} />
-      </Card>
+    <div className="space-y-4">
+      <p className="text-xs text-faint">
+        Patterns below reflect only the last {PATTERN_WINDOW_DAYS} days, so they
+        track your current level rather than older play.
+      </p>
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <MotifsCard username={username} from={from} />
+        <LeakClosureCard username={username} from={from} />
+        <Card title="By opponent rating">
+          <VsOpponentList username={username} from={from} />
+        </Card>
+        <Card title="Win rate by rating bucket">
+          <SliceList username={username} slice="rating_bucket" from={from} />
+        </Card>
+        <Card title="Time of day" className="lg:col-span-2">
+          <TimeOfDayGrid username={username} from={from} />
+        </Card>
+      </div>
     </div>
   );
 }
 
-function MotifsCard({ username }: { username: string }) {
+function MotifsCard({ username, from }: { username: string; from: number }) {
   const { data, isPending, isError } = useQuery({
-    queryKey: ["stats", "motifs", username],
-    queryFn: async () => fetchMotifStats(username),
+    queryKey: ["stats", "motifs", username, from],
+    queryFn: async () => fetchMotifStats(username, from),
   });
 
   let body: ReactNode;
@@ -452,10 +467,10 @@ function leakDeltaClass(delta: number): string {
   return "font-mono text-sm font-semibold text-muted";
 }
 
-function LeakClosureCard({ username }: { username: string }) {
+function LeakClosureCard({ username, from }: { username: string; from: number }) {
   const { data, isPending, isError } = useQuery({
-    queryKey: ["stats", "leak-closure", username],
-    queryFn: async () => fetchLeakClosure(username),
+    queryKey: ["stats", "leak-closure", username, from],
+    queryFn: async () => fetchLeakClosure(username, from),
   });
 
   let body: ReactNode;
@@ -482,10 +497,10 @@ function LeakClosureCard({ username }: { username: string }) {
   return <Card title="Leak closure (first half → second half)">{body}</Card>;
 }
 
-function VsOpponentList({ username }: { username: string }) {
+function VsOpponentList({ username, from }: { username: string; from: number }) {
   const { data, isPending, isError } = useQuery({
-    queryKey: ["stats", "vs-opponent", username],
-    queryFn: async () => fetchVsOpponent(username),
+    queryKey: ["stats", "vs-opponent", username, from],
+    queryFn: async () => fetchVsOpponent(username, from),
   });
   if (isPending) {return <Loading />;}
   if (isError) {return <Failed />;}
@@ -516,10 +531,18 @@ function VsOpponentList({ username }: { username: string }) {
 // Shared bits
 // =====================================================================
 
-function SliceList({ username, slice }: { username: string; slice: WinRateSliceType }) {
+function SliceList({
+  username,
+  slice,
+  from,
+}: {
+  username: string;
+  slice: WinRateSliceType;
+  from?: number;
+}) {
   const { data, isPending, isError } = useQuery({
-    queryKey: ["stats", "win-rate", username, slice],
-    queryFn: async () => fetchWinRateSlice(username, slice),
+    queryKey: ["stats", "win-rate", username, slice, from ?? null],
+    queryFn: async () => fetchWinRateSlice(username, slice, from),
   });
   if (isPending) {return <Loading />;}
   if (isError) {return <Failed />;}
@@ -550,10 +573,10 @@ const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const HOURS = Array.from({ length: 24 }, (_, h) => h);
 const DAYS = Array.from({ length: 7 }, (_, d) => d);
 
-function TimeOfDayGrid({ username }: { username: string }): ReactNode {
+function TimeOfDayGrid({ username, from }: { username: string; from: number }): ReactNode {
   const { data, isPending, isError } = useQuery({
-    queryKey: ["stats", "time-of-day", username],
-    queryFn: async () => fetchByTimeOfDay(username),
+    queryKey: ["stats", "time-of-day", username, from],
+    queryFn: async () => fetchByTimeOfDay(username, from),
   });
   if (isPending) {return <Loading />;}
   if (isError) {return <Failed />;}

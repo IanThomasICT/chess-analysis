@@ -196,8 +196,23 @@ export interface TimeOfDayBucket {
   win_rate: number;
 }
 
-export async function fetchByTimeOfDay(username: string): Promise<TimeOfDayBucket[]> {
-  const r = await fetch(`/api/stats/${encodeURIComponent(username)}/by-time-of-day`);
+/** Build a `?from=&to=` query string from optional epoch-second bounds. */
+function dateRangeQuery(from?: number, to?: number): string {
+  const params = new URLSearchParams();
+  if (from !== undefined) {params.set("from", String(from));}
+  if (to !== undefined) {params.set("to", String(to));}
+  const s = params.toString();
+  return s === "" ? "" : `?${s}`;
+}
+
+export async function fetchByTimeOfDay(
+  username: string,
+  from?: number,
+  to?: number,
+): Promise<TimeOfDayBucket[]> {
+  const r = await fetch(
+    `/api/stats/${encodeURIComponent(username)}/by-time-of-day${dateRangeQuery(from, to)}`,
+  );
   if (!r.ok) {
     throw new Error("Failed to fetch time-of-day stats");
   }
@@ -269,8 +284,14 @@ export async function fetchAlternatives(
   return r.json() as Promise<AlternativesResponse>;
 }
 
-export async function fetchMotifStats(username: string): Promise<MotifStat[]> {
-  const r = await fetch(`/api/stats/${encodeURIComponent(username)}/motifs`);
+export async function fetchMotifStats(
+  username: string,
+  from?: number,
+  to?: number,
+): Promise<MotifStat[]> {
+  const r = await fetch(
+    `/api/stats/${encodeURIComponent(username)}/motifs${dateRangeQuery(from, to)}`,
+  );
   if (!r.ok) {
     throw new Error("Failed to fetch motif stats");
   }
@@ -535,16 +556,24 @@ export async function fetchSessionFatigue(username: string): Promise<SessionFati
   return fetchStat<SessionFatigueBucket[]>(username, "session-fatigue");
 }
 
-export async function fetchVsOpponent(username: string): Promise<VsOpponentBucket[]> {
-  return fetchStat<VsOpponentBucket[]>(username, "vs-opponent");
+export async function fetchVsOpponent(
+  username: string,
+  from?: number,
+  to?: number,
+): Promise<VsOpponentBucket[]> {
+  return fetchStat<VsOpponentBucket[]>(username, "vs-opponent", dateRangeQuery(from, to));
 }
 
 export async function fetchAclTrend(username: string, timeClass: TimeClass): Promise<AclTrendPoint[]> {
   return fetchStat<AclTrendPoint[]>(username, "acl-trend", `?time_class=${timeClass}`);
 }
 
-export async function fetchLeakClosure(username: string): Promise<LeakClosureRow[]> {
-  return fetchStat<LeakClosureRow[]>(username, "leak-closure");
+export async function fetchLeakClosure(
+  username: string,
+  from?: number,
+  to?: number,
+): Promise<LeakClosureRow[]> {
+  return fetchStat<LeakClosureRow[]>(username, "leak-closure", dateRangeQuery(from, to));
 }
 
 export async function fetchTpr(username: string, timeClass: TimeClass): Promise<TprResponse> {

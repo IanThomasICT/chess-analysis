@@ -238,14 +238,21 @@ const DAY_LOOKUP: Record<string, number> = {
 export function computeByTimeOfDay(
   database: Database,
   username: string,
+  from?: number,
+  to?: number,
 ): TimeOfDayBucket[] {
   const lower = username.toLowerCase();
+  const dateClauses: string[] = [];
+  const dateBinds: number[] = [];
+  if (from !== undefined) { dateClauses.push("end_time >= ?"); dateBinds.push(from); }
+  if (to !== undefined) { dateClauses.push("end_time <= ?"); dateBinds.push(to); }
+  const dateClause = dateClauses.length > 0 ? `AND ${dateClauses.join(" AND ")}` : "";
   const rows = database
     .prepare(`
       SELECT end_time, result, white, black FROM games
-       WHERE lower(username) = ? AND end_time IS NOT NULL
+       WHERE lower(username) = ? AND end_time IS NOT NULL ${dateClause}
     `)
-    .all(lower) as RawRow[];
+    .all(lower, ...dateBinds) as RawRow[];
 
   const userTz = process.env.USER_TZ ?? "America/Los_Angeles";
 
@@ -305,7 +312,11 @@ stats.get("/stats/:username/by-time-of-day", (c) => {
   if (!USERNAME_PATTERN.test(username)) {
     return c.json({ error: "Invalid username format" }, 400);
   }
-  return c.json(computeByTimeOfDay(db, username));
+  const fromStr = c.req.query("from");
+  const toStr = c.req.query("to");
+  const from = fromStr !== undefined ? parseInt(fromStr, 10) : undefined;
+  const to = toStr !== undefined ? parseInt(toStr, 10) : undefined;
+  return c.json(computeByTimeOfDay(db, username, from, to));
 });
 
 // ---------------------------------------------------------------------------
@@ -809,8 +820,15 @@ interface VsOpponentRow {
 export function computeVsOpponent(
   database: Database,
   username: string,
+  from?: number,
+  to?: number,
 ): VsOpponentBucket[] {
   const lower = username.toLowerCase();
+  const dateClauses: string[] = [];
+  const dateBinds: number[] = [];
+  if (from !== undefined) { dateClauses.push("g.end_time >= ?"); dateBinds.push(from); }
+  if (to !== undefined) { dateClauses.push("g.end_time <= ?"); dateBinds.push(to); }
+  const dateClause = dateClauses.length > 0 ? `AND ${dateClauses.join(" AND ")}` : "";
   const rows = database
     .prepare(`
       SELECT
@@ -835,11 +853,11 @@ export function computeVsOpponent(
       FROM games g
       LEFT JOIN game_metrics gm ON g.id = gm.game_id
       LEFT JOIN game_metrics_ext gme ON g.id = gme.game_id
-      WHERE lower(g.username) = ?
+      WHERE lower(g.username) = ? ${dateClause}
       GROUP BY bucket
       ORDER BY games DESC
     `)
-    .all(lower, lower, lower, lower, lower, lower, lower, lower, lower, lower) as VsOpponentRow[];
+    .all(lower, lower, lower, lower, lower, lower, lower, lower, lower, lower, ...dateBinds) as VsOpponentRow[];
 
   return rows.map((r) => ({
     bucket: r.bucket,
@@ -855,7 +873,11 @@ stats.get("/stats/:username/vs-opponent", (c) => {
   if (!USERNAME_PATTERN.test(username)) {
     return c.json({ error: "Invalid username format" }, 400);
   }
-  return c.json(computeVsOpponent(db, username));
+  const fromStr = c.req.query("from");
+  const toStr = c.req.query("to");
+  const from = fromStr !== undefined ? parseInt(fromStr, 10) : undefined;
+  const to = toStr !== undefined ? parseInt(toStr, 10) : undefined;
+  return c.json(computeVsOpponent(db, username, from, to));
 });
 
 // ---------------------------------------------------------------------------
@@ -946,18 +968,32 @@ interface LeakHalfRow {
 export function computeLeakClosure(
   database: Database,
   username: string,
+  from?: number,
+  to?: number,
 ): LeakClosureRow[] {
   const lower = username.toLowerCase();
 
-  // Find median end_time for user's games
+  const dateClauses: string[] = [];
+  const dateBinds: number[] = [];
+  if (from !== undefined) { dateClauses.push("g.end_time >= ?"); dateBinds.push(from); }
+  if (to !== undefined) { dateClauses.push("g.end_time <= ?"); dateBinds.push(to); }
+  const dateClauseG = dateClauses.length > 0 ? `AND ${dateClauses.join(" AND ")}` : "";
+
+  // Median bound (unprefixed `end_time` for the bare `games` query).
+  const medianDateClauses: string[] = [];
+  if (from !== undefined) { medianDateClauses.push("end_time >= ?"); }
+  if (to !== undefined) { medianDateClauses.push("end_time <= ?"); }
+  const medianDateClause = medianDateClauses.length > 0 ? `AND ${medianDateClauses.join(" AND ")}` : "";
+
+  // Find median end_time for the windowed set of user games.
   const medianRow = database
     .prepare(`
       SELECT end_time FROM games
-       WHERE lower(username) = ? AND end_time IS NOT NULL
+       WHERE lower(username) = ? AND end_time IS NOT NULL ${medianDateClause}
        ORDER BY end_time ASC
-       LIMIT 1 OFFSET (SELECT COUNT(*) FROM games WHERE lower(username) = ? AND end_time IS NOT NULL) / 2
+       LIMIT 1 OFFSET (SELECT COUNT(*) FROM games WHERE lower(username) = ? AND end_time IS NOT NULL ${medianDateClause}) / 2
     `)
-    .get(lower, lower) as { end_time: number } | null;
+    .get(lower, ...dateBinds, lower, ...dateBinds) as { end_time: number } | null;
 
   if (medianRow === null) {
     return [];
@@ -977,10 +1013,11 @@ export function computeLeakClosure(
            OR (lower(g.black) = lower(g.username) AND ((bt.move_index - 1) % 2) = 1)
          )
          AND g.end_time IS NOT NULL
+         ${dateClauseG}
        GROUP BY bt.tag, half
        ORDER BY bt.tag, half
     `)
-    .all(medianTime, lower) as LeakHalfRow[];
+    .all(medianTime, lower, ...dateBinds) as LeakHalfRow[];
 
   // Aggregate into tag → {first, second}
   const tagMap = new Map<string, { first_half: number; second_half: number }>();
@@ -1011,7 +1048,11 @@ stats.get("/stats/:username/leak-closure", (c) => {
   if (!USERNAME_PATTERN.test(username)) {
     return c.json({ error: "Invalid username format" }, 400);
   }
-  return c.json(computeLeakClosure(db, username));
+  const fromStr = c.req.query("from");
+  const toStr = c.req.query("to");
+  const from = fromStr !== undefined ? parseInt(fromStr, 10) : undefined;
+  const to = toStr !== undefined ? parseInt(toStr, 10) : undefined;
+  return c.json(computeLeakClosure(db, username, from, to));
 });
 
 // ---------------------------------------------------------------------------
