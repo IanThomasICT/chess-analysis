@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { DrawShape } from "@lichess-org/chessground/draw";
 import type { Key } from "@lichess-org/chessground/types";
 import { Clock, AlertTriangle } from "lucide-react";
-import { fetchGame, fetchGameMetrics, fetchAlternatives, type AnalysisRow, type GameMove, type GameMetrics } from "../api";
+import { fetchGame, fetchGameMetrics, fetchAlternatives, type AnalysisRow, type GameMove, type GameMetrics, type PerSideMetrics } from "../api";
 import { ChessBoard } from "../components/ChessBoard";
 import { EvalBar } from "../components/EvalBar";
 import { EvalGraph } from "../components/EvalGraph";
@@ -12,6 +12,8 @@ import { MoveList } from "../components/MoveList";
 import { RecurrencePanel } from "../components/RecurrencePanel";
 import { AlternativesPanel } from "../components/AlternativesPanel";
 import { MetricsCard } from "../components/MetricsCard";
+import { MoveScrubber } from "../components/MoveScrubber";
+import { GameReviewSummary } from "../components/GameReviewSummary";
 import { Chip, type ChipTone } from "../components/ui/Chip";
 import { Tabs } from "../components/ui/Tabs";
 import { classifySwing, type MoveClass } from "../lib/classify";
@@ -277,7 +279,11 @@ export function Analysis() {
         eventSource.close();
         setIsAnalyzing(false);
         setPhase(null);
+        // Refetch the game so `analyzed` flips true — this is what enables the
+        // metrics query (and thus the accuracy strip) without a page reload.
+        void queryClient.invalidateQueries({ queryKey: ["game", game.id] });
         void queryClient.invalidateQueries({ queryKey: ["metrics", game.id] });
+        void queryClient.invalidateQueries({ queryKey: ["metricDetail", game.id] });
         void queryClient.invalidateQueries({ queryKey: ["alternatives", game.id] });
         return;
       }
@@ -551,8 +557,13 @@ export function Analysis() {
     typeof game.termination === "string" &&
     game.termination.toLowerCase().includes("on time");
 
-  const navBtn =
-    "rounded bg-raised px-3 py-1 text-sm text-fg transition-colors hover:bg-line";
+  // Per-side metric accessors for the always-visible accuracy strip.
+  let userMetricsSide: PerSideMetrics | null = null;
+  let oppMetricsSide: PerSideMetrics | null = null;
+  if (metrics !== undefined) {
+    userMetricsSide = userIsWhite ? metrics.white : metrics.black;
+    oppMetricsSide = userIsWhite ? metrics.black : metrics.white;
+  }
 
   return (
     <div className="flex h-[calc(100vh-3.5rem)] flex-col overflow-hidden">
@@ -649,18 +660,15 @@ export function Analysis() {
               </div>
             )}
 
-            {/* Move navigation */}
-            <div className="flex shrink-0 items-center justify-center gap-2">
-              <button type="button" onClick={() => setCurrentMove(0)} className={navBtn}>&laquo;</button>
-              <button type="button" onClick={() => setCurrentMove(Math.max(0, currentMove - 1))} className={navBtn}>&lsaquo;</button>
-              <span className="min-w-[80px] text-center font-mono text-sm text-muted">
-                {currentMove} / {maxMove}
-              </span>
-              <button type="button" onClick={() => setCurrentMove(Math.min(maxMove, currentMove + 1))} className={navBtn}>&rsaquo;</button>
-              <button type="button" onClick={() => setCurrentMove(maxMove)} className={navBtn}>&raquo;</button>
-              <div className="mx-1 h-5 w-px bg-line" />
-              <button type="button" onClick={() => setUserFlipped((f) => !f)} className={navBtn} title="Flip board">&#x21C5;</button>
-            </div>
+            {/* Move scrubber — draggable timeline with blunder/mistake ticks */}
+            <MoveScrubber
+              currentMove={currentMove}
+              maxMove={maxMove}
+              onSelect={setCurrentMove}
+              onFlip={() => { setUserFlipped((f) => !f); }}
+              classifications={moveClassifications}
+              userIsWhite={userIsWhite}
+            />
 
             {/* Blunder / Mistake / Missed jump nav (user moves only) */}
             {moveClassifications.length > 0 && (
@@ -677,6 +685,34 @@ export function Analysis() {
 
           {/* Tabbed rail */}
           <div className="flex min-h-0 flex-col overflow-hidden rounded-lg border border-line bg-surface">
+            {/* Always-visible accuracy + clickable blunder jump */}
+            {userMetricsSide !== null && oppMetricsSide !== null && (
+              <div className="flex shrink-0 flex-wrap items-center gap-1.5 border-b border-line p-2 text-xs">
+                <span className="text-muted">Acc</span>
+                <Chip tone={accuracyTone(userMetricsSide.accuracy)}>
+                  {Math.round(userMetricsSide.accuracy)}% you
+                </Chip>
+                <Chip tone={accuracyTone(oppMetricsSide.accuracy)}>
+                  {Math.round(oppMetricsSide.accuracy)}% opp
+                </Chip>
+                {userMetricsSide.blunders > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => { goToNext("blunder"); }}
+                    title="Jump to next blunder (B)"
+                    className="rounded-full transition-transform hover:scale-105"
+                  >
+                    <Chip tone="blunder" icon={<AlertTriangle size={11} />}>
+                      {userMetricsSide.blunders} blunder{userMetricsSide.blunders === 1 ? "" : "s"} &rarr;
+                    </Chip>
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* Always-visible review digest: quality, Elo, top critical moves */}
+            <GameReviewSummary gameId={game.id} onSelectMove={setCurrentMove} />
+
             <Tabs
               tabs={RAIL_TABS}
               active={railTab}
@@ -686,19 +722,6 @@ export function Analysis() {
 
             {railTab === "moves" && (
               <div className="flex min-h-0 flex-1 flex-col">
-                {metrics !== undefined && (
-                  <div className="flex shrink-0 flex-wrap items-center gap-1.5 border-b border-line p-2 text-xs">
-                    <span className="text-muted">Acc</span>
-                    <Chip tone={accuracyTone(metrics.white.accuracy)}>{Math.round(metrics.white.accuracy)}% W</Chip>
-                    <Chip tone={accuracyTone(metrics.black.accuracy)}>{Math.round(metrics.black.accuracy)}% B</Chip>
-                    {metrics.white.blunders > 0 && (
-                      <Chip tone="blunder" icon={<AlertTriangle size={11} />}>{metrics.white.blunders} W</Chip>
-                    )}
-                    {metrics.black.blunders > 0 && (
-                      <Chip tone="blunder" icon={<AlertTriangle size={11} />}>{metrics.black.blunders} B</Chip>
-                    )}
-                  </div>
-                )}
                 <div className="min-h-0 flex-1 overflow-y-auto">
                   <MoveList
                     moves={moveSans}
