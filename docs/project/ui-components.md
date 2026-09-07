@@ -1,5 +1,64 @@
 # UI Components
 
+> All components use the single committed dark theme via Tailwind tokens (`bg-surface`, `text-blunder`,
+> …) — no `dark:` variants, no raw hex. Canvas charts read the matching palette from
+> `client/src/lib/theme-colors.ts`. See [ui-ux.md](ui-ux.md) for the design system.
+
+## AppShell + UI primitives
+
+File: `client/src/components/AppShell.tsx` + `client/src/components/ui/*`.
+
+`AppShell` is the persistent frame: a top navbar (`h-14`) with brand, nav links
+(`Games / Stats / Drill / Study`, active-state, carry `?username=`), and a settings button (current username +
+gear icon) that opens `SettingsModal`, over a routed `<Outlet/>`. It wraps `SettingsProvider` so every
+page reads the active user and client prefs via `useSettings()`.
+All routes are children of one layout route in `App.tsx`.
+
+Reusable primitives in `components/ui/` (compose pages from these, don't re-derive markup):
+
+| Primitive | Purpose |
+|---|---|
+| `Card` | surface container + optional uppercase title + right `action` slot |
+| `StatTile` | KPI: small label + large mono value (+ optional hint/tone) |
+| `Chip` | tone-driven status pill (`win`/`blunder`/`info`/…), optional leading icon |
+| `Tabs` | underline tab bar (controlled) — Analysis rail + Stats sections |
+| `SegmentedControl` | inline option group, all choices visible; `label` → `role="group"` (a11y + tests) |
+| `TimeClassIcon` | lucide time-class glyph (bullet/blitz/rapid/daily), replaces emoji |
+
+## SettingsModal
+
+File: `client/src/components/SettingsModal.tsx` (+ `client/src/context/Settings.tsx`).
+
+Dialog (`role="dialog"`, aria-label `Settings`) opened from the navbar. Props: `open`, `onClose`. Holds a
+local `draft` of the username (`input[name="username"]`, reseeded each open, auto-focused) and applies it
+via `useSettings().setUsername` on **Save**. The default time-class `SegmentedControl` writes through
+`useSettings().updateSettings` immediately (no Save needed). Closes on Escape, backdrop click, close button,
+or Cancel. `SettingsProvider` persists `{ defaultTimeClass }` to localStorage key `chess-analyzer-settings`,
+validating the stored value against the allowed set on read.
+
+## MoveScrubber
+
+File: `client/src/components/MoveScrubber.tsx`.
+
+Replaces the `« ‹ N/M › »` stepper under the Analysis board. Props: `currentMove`, `maxMove`, `onSelect`,
+`onFlip`, `classifications: MoveClass[]`, `userIsWhite`. A transparent `<input type="range">` is the
+interaction layer (drag + keyboard); a styled rail, progress fill, and thumb render beneath it. Ticks
+(`bg-blunder` / `bg-mistake`) mark the **user's** blunders/mistakes only (parity of move index vs
+`userIsWhite`) and are clickable buttons (`aria-label="Go to <kind> at move N"`). Icon buttons
+`First move` / `Previous move` / `Next move` / `Last move` / `Flip board` are aria-labelled and disabled at
+the bounds. Renders the `N / M` counter the e2e suite keys on.
+
+## GameReviewSummary
+
+File: `client/src/components/GameReviewSummary.tsx` (memo).
+
+Always-visible digest above the Analysis rail tabs. Props: `gameId`, `onSelectMove(positionIndex)`. Queries
+`["metricDetail", gameId]` → `GET /api/metrics/game/:id` and renders the result-quality chip, Elo delta,
+time-trouble chip, and the top-3 `criticalMoves` as buttons (`Jump to <SAN>`) that call
+`onSelectMove(move.plyIndex)` — `plyIndex` is already the position index after the move, so no `+1`.
+Pending → "Building report…"; error (game not yet analyzed → 404) → "Report available once analysis
+finishes." Analysis SSE `done` invalidates the query so the digest appears live.
+
 ## EvalBar
 
 File: `client/src/components/EvalBar.tsx`
@@ -132,9 +191,15 @@ Thresholds follow Lichess Win%-delta (see [docs/metrics.md](metrics.md) for the 
 | ≤ 0.02 | best | (none) |
 | else | good | (none) |
 
+The active move is highlighted with `bg-accent/20 text-fg`; opponent plies are dimmed `opacity-50`. (The
+quality colors above come from `classToColor` in `shared/classify.ts`.)
+
 ### Motif chips
 
-When `motifs[moveIndex]` is populated, a small purple chip renders next to the move showing first-letter abbreviations (F=fork, P=pin, S=skewer, H=hanging piece, M=missed mate, B=back-rank mate). The chip carries a `title` attribute with the full motif names (underscores → spaces) so hovering reveals the meaning.
+When `motifs[moveIndex]` is populated, a small info-toned chip (`text-info`) renders next to the move
+showing first-letter abbreviations (F=fork, P=pin, S=skewer, H=hanging piece, M=missed mate, B=back-rank
+mate), with a `title` of the full names. A separate `M` badge (`bg-inaccuracy/20 text-inaccuracy`) marks
+a missed conversion (opponent blundered, user didn't punish).
 
 ### Auto-Scroll
 
@@ -150,32 +215,57 @@ File: `client/src/components/GameCard.tsx`
 
 See [gallery.md](gallery.md) for details — including the optional `accuracy?` / `blunders?` chips that render when metrics are available.
 
-## StatsPanel
+## StatsPanel (KPI band)
 
 File: `client/src/components/StatsPanel.tsx`
 
-Compact horizontal panel slotted above the gallery filter bar on Home. Fetches `/api/stats/:username/by-side` via TanStack Query and renders two side-by-side blocks: "As White" and "As Black", each showing W-D-L, win rate, avg accuracy, and blunders/game. Returns `null` while loading, on error, or when both sides have zero games (no flicker). The "As Black" block is separated by a thin vertical divider.
+At-a-glance KPI band atop the Games page. Fetches `/api/stats/:username/by-side` and renders a row of
+`StatTile`s: overall Record (W-D-L), Win rate, Accuracy, Blunders/game, plus per-side As White / As Black
+(win% + accuracy hint). Overall figures are games-weighted across the two sides. Returns `null` while
+loading, on error, or when both sides have zero games (no flicker).
 
 ## RecurrencePanel
 
 File: `client/src/components/RecurrencePanel.tsx`
 
-Position-recurrence widget on the Analysis page. Fetches `/api/positions/history?fen=…&username=…` and lists other games (excluding the current one) where the same position appeared — matched on `fen_key` (first 4 FEN fields, transposition-friendly). Each row shows a red dot if the user blundered at that move, the opponent's name, the played move, and the game date as a `<Link>` deep-link `/analysis/:id?move=N`. Silent on empty/loading so navigation between moves doesn't flash. Hidden until at least one prior game matches.
+Position-recurrence widget shown in the Analysis rail's **History** tab. Fetches
+`/api/positions/history?fen=…&username=…` and lists other games (excluding the current one) where the same
+position appeared — matched on `fen_key` (first 4 FEN fields, transposition-friendly). Each row shows a
+blunder-toned dot (`text-blunder`) if the user blundered there, the opponent's name, the played move, and
+the date as a `<Link>` deep-link `/analysis/:id?move=N`. Renders flush (the rail provides the card chrome
++ scroll). Silent on empty/loading.
 
 ## AlternativesPanel
 
 File: `client/src/components/AlternativesPanel.tsx`
 
-Top-3 engine lines for the current position, fetched from `/api/games/:gameId/alternatives/:moveIndex`. Each row: rank, eval (formatted `+1.23` or `+M3`), full PV in UCI (truncated with tooltip), depth. Always rendered on the Analysis page because deep analysis (MultiPV=3) is the default. Includes the actually-played move at the bottom for comparison.
+Top-3 engine lines for the current position, fetched from `/api/games/:gameId/alternatives/:moveIndex`.
+Each row: rank, eval (`+1.23` / `+M3`), full PV in UCI (truncated with tooltip), depth. Shown in the
+Analysis rail's **Engine** tab (deep MultiPV=3 is the default). Includes the played move at the bottom.
+
+## MetricsCard (per-game report)
+
+File: `client/src/components/MetricsCard.tsx`
+
+The consolidated per-game report, shown in the Analysis rail's **Report** tab (previously stacked below
+the board). Fetches `/api/metrics/game/:gameId` and renders flush sections: result-quality `Chip` + Elo
+delta, Phase Accuracy, Position Quality, Time, Conversion/Defense (chips), and lists of the top critical
+moves + missed conversions. `memo`-wrapped; see [game_metrics.md](game_metrics.md) for the metric
+definitions.
 
 ## EloTrendChart
 
 File: `client/src/components/EloTrendChart.tsx`
 
-Imperative-canvas uPlot wrapper used by `/stats > Elo Trend`. Single blue series, time-scaled X axis, "Rating" Y label. Same deferred-init-via-ResizeObserver pattern as `EvalGraph` to avoid 0×0 canvas problems. A second `useEffect` on `[data]` re-feeds the series when the user toggles time class.
+Imperative-canvas uPlot wrapper used by **Stats > Trends**. Accent (blue) Elo series + dashed amber
+running-peak overlay, time-scaled X, "Rating" Y label. Colors come from `lib/theme-colors.ts`. Same
+deferred-init-via-ResizeObserver pattern as `EvalGraph`. A `useEffect` on `[data]` re-feeds the series
+when the shared time-class toggle changes.
 
 ## AccuracyTrendChart
 
 File: `client/src/components/AccuracyTrendChart.tsx`
 
-Mirror of `EloTrendChart` for `/stats > Accuracy Trend`. Green stroke (`#22c55e`), Y axis pinned to `[0, 100]` so accuracy values across time classes stay visually comparable, "Accuracy %" axis label. Data comes from `fetchAccuracyTrend(username, timeClass)` which hits `/api/stats/:username/accuracy-trend`.
+Mirror of `EloTrendChart` for **Stats > Trends**. Green stroke (`CHART.good` from `lib/theme-colors.ts`),
+Y pinned to `[0, 100]` for cross-time-class comparability, "Accuracy %" axis label. Data from
+`fetchAccuracyTrend(username, timeClass)` → `/api/stats/:username/accuracy-trend`.

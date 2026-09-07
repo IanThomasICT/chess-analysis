@@ -2,13 +2,17 @@ import { Hono } from "hono";
 import type { Database } from "bun:sqlite";
 import { db } from "../lib/db";
 import { fetchRecentGames, type ChessComGame } from "../lib/chesscom";
-import { pgnToFens, pgnToMoves, pgnHeaders, pgnFinalClocks } from "../lib/pgn";
+import { pgnToFens, pgnToMoves, pgnHeaders, pgnFinalClocks, isStandard, isBotGame } from "../lib/pgn";
 import { isGameAnalyzed, getGameAnalysis, type AnalysisRow } from "../lib/engine";
 import { parseEloHeader } from "../lib/backfill";
 import { classifyOpening } from "../lib/openings";
 import { gameMetrics } from "../lib/metrics";
+import { computeAndStoreMetrics, metricsAreFresh } from "../lib/metrics-store";
 
 const BULK_COMPUTE_LIMIT = 20;
+
+/** How many recent monthly archives to pull from Chess.com on import. */
+const FETCH_MONTHS = 6;
 
 function normalizeHeader(raw: string | undefined): string | null {
   if (raw === undefined || raw.trim() === "") {
@@ -40,6 +44,8 @@ interface GameRow {
   white_clock_final_s: number | null;
   black_clock_final_s: number | null;
   termination: string | null;
+  is_standard: number | null;
+  vs_bot: number | null;
 }
 
 export interface GameRowData {
@@ -59,6 +65,8 @@ export interface GameRowData {
   white_clock_final_s: number | null;
   black_clock_final_s: number | null;
   termination: string | null;
+  is_standard: number;
+  vs_bot: number;
 }
 
 /** Build a fully-populated game row from a ChessComGame and the requesting username. */
@@ -119,7 +127,75 @@ export function buildGameRow(
     white_clock_final_s: clocks.white,
     black_clock_final_s: clocks.black,
     termination,
+    is_standard: isStandard(g.pgn, g.rules) ? 1 : 0,
+    vs_bot: isBotGame(g.pgn) ? 1 : 0,
   };
+}
+
+/**
+ * Usernames whose Chess.com sync is currently running. Guards against stacking
+ * duplicate background syncs when several requests arrive while one is in flight.
+ */
+const inFlightSync = new Set<string>();
+
+/**
+ * Pull recent archives from Chess.com and upsert them into `games`. Skips
+ * bot/coach games. Best-effort: network failures are logged, not thrown, so the
+ * caller can always fall back to the DB cache. No-ops if a sync for this user is
+ * already running.
+ */
+async function syncFromChessCom(username: string): Promise<void> {
+  const key = username.toLowerCase();
+  if (inFlightSync.has(key)) {
+    return;
+  }
+  inFlightSync.add(key);
+  try {
+    const chessComGames = await fetchRecentGames(username, FETCH_MONTHS);
+
+    const upsert = db.prepare(`
+      INSERT OR REPLACE INTO games
+        (id, username, pgn, white, black, result, time_class, end_time,
+         white_elo, black_elo, user_elo, eco, opening,
+         white_clock_final_s, black_clock_final_s, termination, is_standard, vs_bot)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    const upsertMany = db.transaction((gamesToUpsert: ChessComGame[]) => {
+      for (const g of gamesToUpsert) {
+        // Skip games against bots/coaches entirely — real people only.
+        if (isBotGame(g.pgn)) {continue;}
+        const row = buildGameRow(username, g);
+        upsert.run(
+          row.id,
+          row.username,
+          row.pgn,
+          row.white,
+          row.black,
+          row.result,
+          row.time_class,
+          row.end_time,
+          row.white_elo,
+          row.black_elo,
+          row.user_elo,
+          row.eco,
+          row.opening,
+          row.white_clock_final_s,
+          row.black_clock_final_s,
+          row.termination,
+          row.is_standard,
+          row.vs_bot,
+        );
+      }
+    });
+
+    upsertMany(chessComGames);
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "Unknown error";
+    console.error("Failed to fetch from Chess.com:", message);
+  } finally {
+    inFlightSync.delete(key);
+  }
 }
 
 const games = new Hono();
@@ -147,57 +223,30 @@ games.get("/games", async (c) => {
     return c.json({ error: "Invalid username format" }, 400);
   }
 
-  // Fetch from Chess.com + upsert
-  try {
-    const chessComGames = await fetchRecentGames(username, 3);
+  // Refresh from Chess.com. The previous behaviour awaited a 6-month archive
+  // pull on every load (~12s), so the gallery sat on "Loading games…" each
+  // visit. Instead: serve the DB cache instantly and refresh in the background.
+  // Only block when there is nothing cached yet (a user's first import), so the
+  // gallery is never empty when games actually exist.
+  const cached = db
+    .prepare("SELECT COUNT(*) AS n FROM games WHERE username = ? AND vs_bot IS NOT 1")
+    .get(username.toLowerCase()) as { n: number };
 
-    const upsert = db.prepare(`
-      INSERT OR REPLACE INTO games
-        (id, username, pgn, white, black, result, time_class, end_time,
-         white_elo, black_elo, user_elo, eco, opening,
-         white_clock_final_s, black_clock_final_s, termination)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    const upsertMany = db.transaction((gamesToUpsert: ChessComGame[]) => {
-      for (const g of gamesToUpsert) {
-        const row = buildGameRow(username, g);
-        upsert.run(
-          row.id,
-          row.username,
-          row.pgn,
-          row.white,
-          row.black,
-          row.result,
-          row.time_class,
-          row.end_time,
-          row.white_elo,
-          row.black_elo,
-          row.user_elo,
-          row.eco,
-          row.opening,
-          row.white_clock_final_s,
-          row.black_clock_final_s,
-          row.termination,
-        );
-      }
-    });
-
-    upsertMany(chessComGames);
-  } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : "Unknown error";
-    console.error("Failed to fetch from Chess.com:", message);
-    // Fall through to load from DB cache
+  if (cached.n === 0) {
+    await syncFromChessCom(username);
+  } else {
+    void syncFromChessCom(username);
   }
 
-  // Load from DB
+  // Load from DB — exclude games against bots (real people only); NULL = unresolved
+  // is kept so a network hiccup never hides a genuine game.
   const rows = db
     .prepare(
       `SELECT id, username, pgn, white, black, result, time_class, end_time,
               white_elo, black_elo, user_elo, eco, opening,
               white_clock_final_s, black_clock_final_s, termination
        FROM games
-       WHERE username = ?
+       WHERE username = ? AND vs_bot IS NOT 1
        ORDER BY end_time DESC`,
     )
     .all(username.toLowerCase()) as GameRow[];
@@ -235,6 +284,17 @@ games.get("/games/:gameId", (c) => {
 
   const analyzed = isGameAnalyzed(gameId, fens.length);
   const analysis: AnalysisRow[] = analyzed ? getGameAnalysis(gameId) : [];
+
+  // Lazy ongoing capture (R35): if analyzed, ensure extended metrics are current.
+  // Rebuilds from existing analysis rows only — never re-runs the engine — and
+  // no-ops when the cache is already fresh. Best-effort: never fail the fetch.
+  if (analyzed && !metricsAreFresh(db, gameId)) {
+    try {
+      computeAndStoreMetrics(db, gameId);
+    } catch {
+      // metrics are non-critical for the game detail response
+    }
+  }
 
   const motifRows = db
     .prepare(`SELECT move_index, tag FROM blunder_tags WHERE game_id = ?`)
@@ -329,11 +389,13 @@ export function computeAndCacheMetrics(
     return toMetricsResponse(cached);
   }
 
-  // Cache miss — compute from analysis rows
+  // Cache miss — compute from analysis rows.
+  // Restrict to rank-1 rows: deep (MultiPV=3) games store 3 rows/position, and
+  // feeding ranks 2/3 into gameMetrics would corrupt the per-side fold.
   const rows = database
     .prepare(
       `SELECT move_index, fen, move_san, score_cp, score_mate, best_move, depth
-       FROM analysis WHERE game_id = ? ORDER BY move_index`,
+       FROM analysis WHERE game_id = ? AND multipv_rank = 1 ORDER BY move_index`,
     )
     .all(gameId) as AnalysisRow[];
 
@@ -424,7 +486,7 @@ export function fetchBulkMetricsFor(
               gm.acl_white, gm.acl_black, gm.computed_at
          FROM games g
          LEFT JOIN game_metrics gm ON g.id = gm.game_id
-        WHERE lower(g.username) = lower(?)
+        WHERE lower(g.username) = lower(?) AND g.vs_bot IS NOT 1
         ORDER BY g.end_time DESC`,
     )
     .all(username) as JoinRow[];

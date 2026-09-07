@@ -126,7 +126,7 @@ interface Score {
   mate: number | null;
 }
 
-export interface AnalysisResult {
+interface AnalysisResult {
   multipvRank: number;
   score: Score;
   bestMove: string;
@@ -585,4 +585,8 @@ export interface AnalysisRow {
   best_move: string;
   pv: string | null;
   depth: number;
+}
+
+export interface AnalysisRowMPV extends AnalysisRow {
+  multipv_rank: number;
 }

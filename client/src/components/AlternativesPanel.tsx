@@ -30,29 +30,27 @@ export function AlternativesPanel({ gameId, moveIndex, playedMove }: Props) {
   if (data.alternatives.length === 0) { return null; }
 
   return (
-    <div className="mt-3 p-3 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
-      <div className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-2">
-        Top engine lines
-      </div>
+    <div>
+      <div className="mb-2 text-sm font-semibold text-fg">Top engine lines</div>
       <ol className="space-y-1 text-xs">
         {data.alternatives.map((alt: AlternativeRow) => (
           <li key={alt.multipvRank} className="flex items-center gap-2">
-            <span className="w-4 text-gray-400">{alt.multipvRank}.</span>
-            <span className="font-mono text-gray-900 dark:text-gray-100 w-16">
+            <span className="w-4 text-faint">{alt.multipvRank}.</span>
+            <span className="w-16 font-mono text-fg">
               {formatScore(alt.scoreCp, alt.scoreMate)}
             </span>
             <span
-              className="font-mono text-gray-600 dark:text-gray-400 truncate flex-1"
+              className="flex-1 truncate font-mono text-muted"
               title={alt.pv ?? ""}
             >
               {alt.pv !== null && alt.pv !== "" ? alt.pv : alt.bestMove}
             </span>
-            <span className="text-gray-400">d{alt.depth}</span>
+            <span className="text-faint">d{alt.depth}</span>
           </li>
         ))}
       </ol>
       {playedMove !== undefined && playedMove !== "" && (
-        <div className="mt-2 text-xs text-gray-500">
+        <div className="mt-2 text-xs text-muted">
           Played: <span className="font-mono">{playedMove}</span>
         </div>
       )}

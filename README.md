@@ -57,6 +57,8 @@ Open `http://localhost:5173`. Vite proxies `/api/*` to Hono.
 bun run dev          # Start dev servers (Vite :5173 + Hono :3001)
 bun run build        # Production client build (Vite)
 bun run start        # Production server (NODE_ENV=production, single port)
+bun run metrics <user>            # Backfill per-game metrics for a username
+bun run explorer <dump.pgn.zst>   # (optional, manual) build the D29 opening-explorer table
 bun run typecheck    # tsc -b (incremental, cached)
 bun run lint         # ESLint with content-hash cache (<1s warm)
 bun run lint:fix     # ESLint with autofix
@@ -89,13 +91,13 @@ bun run test:all     # Unit + e2e
 
 - [`docs/README.md`](docs/README.md) — spec index
 - [`docs/core.md`](docs/core.md) — vision, architecture, schema, file tree
-- [`docs/metrics.md`](docs/metrics.md) — Lichess accuracy formulas, classification thresholds
-- [`docs/stats.md`](docs/stats.md) — `/stats` page + endpoints
-- [`docs/drill.md`](docs/drill.md) — drill mode + FSRS
-- [`docs/motifs.md`](docs/motifs.md) — motif detectors + tagging
-- [`docs/study.md`](docs/study.md) — glossary page
-- [`docs/analysis-mode.md`](docs/analysis-mode.md) — Stockfish lifecycle + SSE + deep analysis
-- [`docs/security.md`](docs/security.md) — headers, rate limits, SSRF guards
+- [`docs/project/metrics.md`](docs/project/metrics.md) — Lichess accuracy formulas, classification thresholds
+- [`docs/project/stats.md`](docs/project/stats.md) — `/stats` page + endpoints
+- [`docs/project/drill.md`](docs/project/drill.md) — drill mode + FSRS
+- [`docs/project/motifs.md`](docs/project/motifs.md) — motif detectors + tagging
+- [`docs/project/study.md`](docs/project/study.md) — glossary page
+- [`docs/project/analysis-mode.md`](docs/project/analysis-mode.md) — Stockfish lifecycle + SSE + deep analysis
+- [`docs/project/security.md`](docs/project/security.md) — headers, rate limits, SSRF guards
 
 ## Non-goals
 

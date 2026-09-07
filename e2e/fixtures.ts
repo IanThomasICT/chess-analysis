@@ -41,6 +41,12 @@ interface GameSeed {
   end_time: number;
 }
 
+// Anchor seed games to the recent past (relative to seed time) so date-windowed
+// views — notably the Stats "Patterns" section's 60-day window — include them.
+// Fixed epochs would fall outside the window as wall-clock time advances.
+const DAY_S = 86_400;
+const SEED_NOW = Math.floor(Date.now() / 1000);
+
 const GAMES: readonly GameSeed[] = [
   {
     id: "e2e_game_1",
@@ -49,7 +55,7 @@ const GAMES: readonly GameSeed[] = [
     black: "opponent1",
     result: "1-0",
     time_class: "blitz",
-    end_time: 1736899200,
+    end_time: SEED_NOW - DAY_S,
   },
   {
     id: "e2e_game_2",
@@ -58,7 +64,7 @@ const GAMES: readonly GameSeed[] = [
     black: "e2e_fakeplayer",
     result: "0-1",
     time_class: "bullet",
-    end_time: 1736812800,
+    end_time: SEED_NOW - 2 * DAY_S,
   },
   {
     id: "e2e_game_3",
@@ -67,7 +73,7 @@ const GAMES: readonly GameSeed[] = [
     black: "opponent3",
     result: "1/2-1/2",
     time_class: "rapid",
-    end_time: 1736726400,
+    end_time: SEED_NOW - 3 * DAY_S,
   },
 ];
 
@@ -129,7 +135,7 @@ function syntheticAnalysisRows(pgn: string): Array<{
  * Seed the analysis.db with test games so e2e tests don't depend on Chess.com API.
  * Call this before running Playwright tests.
  */
-export function seedTestDatabase(dbPath = "analysis.db"): void {
+export function seedTestDatabase(dbPath = process.env.DATABASE_PATH ?? "analysis.db"): void {
   const db = new Database(dbPath, { create: true });
   db.run("PRAGMA journal_mode = WAL");
 
@@ -145,9 +151,18 @@ export function seedTestDatabase(dbPath = "analysis.db"): void {
       result TEXT,
       time_class TEXT,
       end_time INTEGER,
-      created_at INTEGER DEFAULT (unixepoch())
+      created_at INTEGER DEFAULT (unixepoch()),
+      is_standard INTEGER
     )
   `);
+  // Defensive: when the server already migrated `games` (migration #11) the
+  // CREATE IF NOT EXISTS above is a no-op, but a pre-#11 table would lack the
+  // column. Add it if missing so the seed insert below can set is_standard.
+  try {
+    db.run("ALTER TABLE games ADD COLUMN is_standard INTEGER");
+  } catch {
+    // column already exists — expected after migration #11
+  }
   db.run(`
     CREATE TABLE IF NOT EXISTS analysis (
       game_id TEXT NOT NULL,
@@ -174,8 +189,8 @@ export function seedTestDatabase(dbPath = "analysis.db"): void {
   );
 
   const upsertGame = db.prepare(`
-    INSERT OR REPLACE INTO games (id, username, pgn, white, black, result, time_class, end_time)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT OR REPLACE INTO games (id, username, pgn, white, black, result, time_class, end_time, is_standard)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)
   `);
   const upsertAnalysis = db.prepare(`
     INSERT OR REPLACE INTO analysis
@@ -214,7 +229,7 @@ export function seedTestDatabase(dbPath = "analysis.db"): void {
 /**
  * Remove seeded test data from the database.
  */
-export function cleanTestDatabase(dbPath = "analysis.db"): void {
+export function cleanTestDatabase(dbPath = process.env.DATABASE_PATH ?? "analysis.db"): void {
   try {
     const db = new Database(dbPath, { create: false });
     db.run(`DELETE FROM analysis WHERE game_id LIKE 'e2e_game_%'`);

@@ -9,6 +9,7 @@ import {
   isGameAnalyzed,
 } from "../lib/engine";
 import { tagMoveIfBlunder, type AnalysisSnapshot } from "../lib/motif-tagging";
+import { computeAndStoreMetrics } from "../lib/metrics-store";
 
 /**
  * Two-phase analysis:
@@ -191,6 +192,18 @@ analyze.get("/analyze/:gameId", (c) => {
             };
             priorIndex = result.moveIndex;
           }
+        }
+
+        // R35 ongoing capture — rebuild the timeline from the freshly-stored rows
+        // and persist L2 metrics + feed the drill queue. Best-effort: a failure
+        // here must not break the SSE stream or block completion.
+        try {
+          computeAndStoreMetrics(db, capturedGame.id);
+        } catch (captureError: unknown) {
+          console.error(
+            "Metrics capture error:",
+            captureError instanceof Error ? captureError.message : "Unknown error",
+          );
         }
 
         // Signal completion

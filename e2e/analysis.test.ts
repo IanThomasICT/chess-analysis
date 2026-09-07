@@ -77,15 +77,15 @@ describe("move navigation (buttons)", () => {
 
   test("forward button advances the move", async () => {
     const page = getPage();
-    const forwardBtn = page.locator("button").filter({ hasText: "\u203A" });
+    const forwardBtn = page.getByRole("button", { name: "Next move" });
     await forwardBtn.click();
     await page.getByText("1 / 7").waitFor({ state: "visible" });
   });
 
   test("backward button goes back", async () => {
     const page = getPage();
-    const forwardBtn = page.locator("button").filter({ hasText: "\u203A" });
-    const backBtn = page.locator("button").filter({ hasText: "\u2039" });
+    const forwardBtn = page.getByRole("button", { name: "Next move" });
+    const backBtn = page.getByRole("button", { name: "Previous move" });
     await forwardBtn.click();
     await forwardBtn.click();
     await page.getByText("2 / 7").waitFor({ state: "visible" });
@@ -95,15 +95,15 @@ describe("move navigation (buttons)", () => {
 
   test("end button jumps to final position", async () => {
     const page = getPage();
-    const endBtn = page.locator("button").filter({ hasText: "\u00BB" });
+    const endBtn = page.getByRole("button", { name: "Last move" });
     await endBtn.click();
     await page.getByText("7 / 7").waitFor({ state: "visible" });
   });
 
   test("start button jumps to initial position", async () => {
     const page = getPage();
-    const endBtn = page.locator("button").filter({ hasText: "\u00BB" });
-    const startBtn = page.locator("button").filter({ hasText: "\u00AB" });
+    const endBtn = page.getByRole("button", { name: "Last move" });
+    const startBtn = page.getByRole("button", { name: "First move" });
     await endBtn.click();
     await page.getByText("7 / 7").waitFor({ state: "visible" });
     await startBtn.click();
@@ -112,20 +112,23 @@ describe("move navigation (buttons)", () => {
 
   test("forward button does not go beyond last move", async () => {
     const page = getPage();
-    const endBtn = page.locator("button").filter({ hasText: "\u00BB" });
-    const forwardBtn = page.locator("button").filter({ hasText: "\u203A" });
+    const endBtn = page.getByRole("button", { name: "Last move" });
+    const forwardBtn = page.getByRole("button", { name: "Next move" });
     await endBtn.click();
-    await forwardBtn.click();
-    await forwardBtn.click();
     await page.getByText("7 / 7").waitFor({ state: "visible" });
+    // At the final move the forward/last controls disable.
+    expect(await forwardBtn.isDisabled()).toBe(true);
+    expect(await endBtn.isDisabled()).toBe(true);
   });
 
   test("backward button does not go below 0", async () => {
     const page = getPage();
-    const backBtn = page.locator("button").filter({ hasText: "\u2039" });
-    await backBtn.click();
-    await backBtn.click();
+    const backBtn = page.getByRole("button", { name: "Previous move" });
+    const startBtn = page.getByRole("button", { name: "First move" });
     await page.getByText("0 / 7").waitFor({ state: "visible" });
+    // At the starting position the back/first controls disable.
+    expect(await backBtn.isDisabled()).toBe(true);
+    expect(await startBtn.isDisabled()).toBe(true);
   });
 });
 
@@ -211,7 +214,7 @@ describe("move list interaction", () => {
     // The active button should have a blue background class
     const btn = page.getByRole("button", { name: "e4" });
     const className = await btn.getAttribute("class");
-    expect(className).toContain("bg-blue");
+    expect(className).toContain("bg-accent");
   });
 
   test("clicking last move shows final position", async () => {
@@ -291,6 +294,31 @@ describe("eval bar", () => {
     const page = getPage();
     const evalBarContainer = page.locator(".w-8").first();
     await evalBarContainer.waitFor({ state: "visible" });
+  });
+});
+
+// =====================================================================
+// Tabbed rail (redesign) — Moves / Report / Engine / History
+// =====================================================================
+
+describe("rail tabs", () => {
+  const { getPage } = usePage("/analysis/e2e_game_1");
+
+  test("switching tabs swaps the rail body", async () => {
+    const page = getPage();
+    // Moves is the default tab → SAN move buttons are present. Match the bare
+    // SAN exactly so the always-visible "Review these moves" buttons (which embed
+    // SAN in a longer label) don't collide.
+    await page.getByRole("button", { name: "e4", exact: true }).first().waitFor({ state: "visible" });
+
+    // Report tab unmounts the move list and shows the metrics card.
+    await page.getByRole("button", { name: "Report" }).click();
+    await page.getByText("Phase Accuracy").waitFor({ state: "visible" });
+    expect(await page.getByRole("button", { name: "e4", exact: true }).count()).toBe(0);
+
+    // Back to Moves restores the move list.
+    await page.getByRole("button", { name: "Moves" }).click();
+    await page.getByRole("button", { name: "e4", exact: true }).first().waitFor({ state: "visible" });
   });
 });
 

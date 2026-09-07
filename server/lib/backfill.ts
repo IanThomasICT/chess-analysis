@@ -1,6 +1,6 @@
 import type { Database } from "bun:sqlite";
 import { db } from "./db";
-import { pgnHeaders, pgnToMoves } from "./pgn";
+import { pgnHeaders, pgnToMoves, isStandard } from "./pgn";
 import { classifyOpening, loadOpenings } from "./openings";
 import { fenKey } from "./engine";
 import { tagMoveIfBlunder } from "./motif-tagging";
@@ -203,6 +203,45 @@ export function backfillMotifs(
     }
   }
   return processed;
+}
+
+/**
+ * Idempotent backfill: for every game where is_standard IS NULL, classify the
+ * PGN as standard chess (1) or a variant (0). Safe to run on every server start.
+ * Without the Chess.com `rules` field (not stored), classification relies on the
+ * PGN `[Variant]` header — sufficient for distinguishing variants from standard.
+ *
+ * Returns the number of games processed.
+ */
+export function backfillIsStandard(database: Database = db): number {
+  const rows = database
+    .prepare(`SELECT id, pgn FROM games WHERE is_standard IS NULL`)
+    .all() as Array<{ id: string; pgn: string }>;
+
+  if (rows.length === 0) {
+    return 0;
+  }
+
+  const update = database.prepare(
+    `UPDATE games SET is_standard = ? WHERE id = ?`,
+  );
+
+  const tx = database.transaction(
+    (items: Array<{ id: string; pgn: string }>) => {
+      for (const r of items) {
+        let std: number;
+        try {
+          std = isStandard(r.pgn) ? 1 : 0;
+        } catch {
+          std = 1; // unparseable PGN — assume standard rather than drop
+        }
+        update.run(std, r.id);
+      }
+    },
+  );
+
+  tx(rows);
+  return rows.length;
 }
 
 export function parseEloHeader(raw: string | undefined): number | null {

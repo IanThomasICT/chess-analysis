@@ -8,8 +8,9 @@ describe("smoke tests", () => {
 
   test("page loads and shows title", async () => {
     const page = getPage();
-    await page.locator("h1").waitFor({ state: "visible" });
-    expect(await page.locator("h1").textContent()).toBe("Chess Analyzer");
+    const brand = page.getByRole("link", { name: /Chess Analyzer/ }).first();
+    await brand.waitFor({ state: "visible" });
+    expect(await brand.textContent()).toContain("Chess Analyzer");
   });
 });
 
@@ -58,7 +59,7 @@ describe("real data smoke tests", () => {
   test("Stats page loads for kidkasu", async () => {
     const page = getPage();
     await page.goto(`${baseUrl}/stats?username=kidkasu`);
-    await page.getByRole("button", { name: "By Side" }).waitFor({ state: "visible" });
-    await page.getByRole("button", { name: "Accuracy Trend" }).waitFor({ state: "visible" });
+    await page.getByRole("button", { name: "Overview" }).waitFor({ state: "visible" });
+    await page.getByRole("button", { name: "Trends" }).waitFor({ state: "visible" });
   });
 });

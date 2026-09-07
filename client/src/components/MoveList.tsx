@@ -39,21 +39,19 @@ function Ply({
   onClick,
   activeRef,
 }: PlyProps) {
-  const activeClass = isActive
-    ? "bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200"
-    : "text-gray-900 dark:text-gray-100";
+  const activeClass = isActive ? "bg-accent/20 text-fg" : "text-fg";
   const dimClass = isUserPly ? "" : "opacity-50";
   return (
     <button
       type="button"
       ref={activeRef}
       onClick={onClick}
-      className={`text-left px-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700 ${activeClass} ${dimClass} ${classToColor(classification)}`}
+      className={`rounded px-1 text-left hover:bg-raised ${activeClass} ${dimClass} ${classToColor(classification)}`}
     >
       {san}
       {motifTags.length > 0 && (
         <span
-          className="ml-1 text-[10px] text-purple-600 dark:text-purple-300 cursor-help"
+          className="ml-1 cursor-help text-[10px] text-info"
           title={motifTitle(motifTags)}
         >
           {motifTags.map((t) => t.charAt(0).toUpperCase()).join("")}
@@ -61,7 +59,7 @@ function Ply({
       )}
       {isMissed && (
         <span
-          className="ml-1 text-[10px] px-1 rounded bg-yellow-200 text-yellow-900 dark:bg-yellow-800 dark:text-yellow-100 cursor-help"
+          className="ml-1 cursor-help rounded bg-inaccuracy/20 px-1 text-[10px] text-inaccuracy"
           title="Missed conversion — opponent blundered, you didn't punish"
         >
           M
@@ -119,7 +117,7 @@ export const MoveList = memo(function MoveList({
           const blackTransition = blackPly !== undefined ? blackPly.index - 1 : -1;
           return (
             <div key={pair.number} className="contents">
-              <span className="text-gray-400 dark:text-gray-500 text-right pr-1">
+              <span className="pr-1 text-right text-faint">
                 {pair.number}.
               </span>
               <Ply

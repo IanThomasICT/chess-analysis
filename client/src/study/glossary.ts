@@ -25,7 +25,7 @@ export const GLOSSARY: GlossaryEntry[] = [
     aliases: ["accuracy score"],
     plain: "A 0–100 score per game. Above 90 = very clean. Below 70 = lots of mistakes.",
     detail:
-      "Lichess-style accuracy. For each move, your eval before and after the move is converted to a Win% (sigmoid of centipawns). The drop in Win% feeds a formula that gives the move a 0–100 score. Game accuracy is the mean of move scores per side.\n\nLower swing → higher accuracy. A move that loses 30 percentage points of Win% scores near zero; a move that doesn't change the eval scores near 100.",
+      "Lichess-style accuracy. For each move, your eval before and after the move is converted to a Win% (sigmoid of centipawns). The drop in Win% feeds a formula that gives the move a 0–100 score.\n\nGame accuracy combines those move scores exactly like Lichess: it averages a volatility-weighted mean (moves in sharp, swingy positions count more) with a harmonic mean (which punishes a single terrible move harder than a plain average would). So one big blunder pulls your accuracy down more than a handful of small slips.\n\nLower swing → higher accuracy. A move that loses 30 percentage points of Win% scores near zero; a move that doesn't change the eval scores near 100.",
     where: "GameCard chip on Home; the header chip on the Analysis page; the Accuracy trend tab on Stats.",
     link: "/stats",
     metric: "Accuracy",

@@ -1,6 +1,7 @@
 import { memo, useEffect, useRef } from "react";
 import uPlot from "uplot";
 import type { AccuracyTrendPoint } from "../api";
+import { CHART } from "../lib/theme-colors";
 
 interface Props {
   data: AccuracyTrendPoint[];
@@ -42,14 +43,14 @@ export const AccuracyTrendChart = memo(function AccuracyTrendChart({
             },
             axes: [
               {
-                stroke: "#888",
+                stroke: CHART.axis,
                 font: "10px system-ui, sans-serif",
                 grid: { stroke: "rgba(128,128,128,0.15)", width: 1 },
                 ticks: { show: false },
               },
               {
                 label: "Accuracy %",
-                stroke: "#888",
+                stroke: CHART.axis,
                 font: "10px system-ui, sans-serif",
                 size: 48,
                 grid: { stroke: "rgba(128,128,128,0.15)", width: 1 },
@@ -58,7 +59,7 @@ export const AccuracyTrendChart = memo(function AccuracyTrendChart({
             ],
             series: [
               {},
-              { stroke: "#22c55e", width: 2, points: { show: false } },
+              { stroke: CHART.good, width: 2, points: { show: false } },
             ],
             legend: { show: false },
           },

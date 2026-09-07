@@ -40,7 +40,7 @@ export interface GameMove {
   to: string;
 }
 
-export type Motif =
+type Motif =
   | "hanging_piece"
   | "fork"
   | "pin"
@@ -196,12 +196,21 @@ export interface TimeOfDayBucket {
   win_rate: number;
 }
 
-export async function fetchByTimeOfDay(username: string): Promise<TimeOfDayBucket[]> {
-  const r = await fetch(`/api/stats/${encodeURIComponent(username)}/by-time-of-day`);
-  if (!r.ok) {
-    throw new Error("Failed to fetch time-of-day stats");
-  }
-  return r.json() as Promise<TimeOfDayBucket[]>;
+/** Build a `?from=&to=` query string from optional epoch-second bounds. */
+function dateRangeQuery(from?: number, to?: number): string {
+  const params = new URLSearchParams();
+  if (from !== undefined) {params.set("from", String(from));}
+  if (to !== undefined) {params.set("to", String(to));}
+  const s = params.toString();
+  return s === "" ? "" : `?${s}`;
+}
+
+export async function fetchByTimeOfDay(
+  username: string,
+  from?: number,
+  to?: number,
+): Promise<TimeOfDayBucket[]> {
+  return fetchStat<TimeOfDayBucket[]>(username, "by-time-of-day", dateRangeQuery(from, to));
 }
 
 export type WinRateSliceType = "color" | "time_class" | "rating_bucket" | "opening";
@@ -269,12 +278,12 @@ export async function fetchAlternatives(
   return r.json() as Promise<AlternativesResponse>;
 }
 
-export async function fetchMotifStats(username: string): Promise<MotifStat[]> {
-  const r = await fetch(`/api/stats/${encodeURIComponent(username)}/motifs`);
-  if (!r.ok) {
-    throw new Error("Failed to fetch motif stats");
-  }
-  return r.json() as Promise<MotifStat[]>;
+export async function fetchMotifStats(
+  username: string,
+  from?: number,
+  to?: number,
+): Promise<MotifStat[]> {
+  return fetchStat<MotifStat[]>(username, "motifs", dateRangeQuery(from, to));
 }
 
 export async function fetchWinRateSlice(
@@ -358,4 +367,177 @@ export async function fetchDrillProgress(username: string): Promise<DrillProgres
     throw new Error("Failed to fetch drill progress");
   }
   return r.json() as Promise<DrillProgress>;
+}
+
+// ---------------------------------------------------------------------------
+// Extended per-game metrics (game_metrics_ext) + aggregates
+// ---------------------------------------------------------------------------
+
+type ResultForUser = "win" | "loss" | "draw";
+type ResultQuality =
+  | "swindle_win" | "clean_win"
+  | "unlucky_loss" | "clean_loss"
+  | "hold_draw" | "even_draw";
+
+export interface GameMetricSummary {
+  gameId: string;
+  endTime: number;
+  timeClass: string;
+  userColor: "w" | "b";
+  result: ResultForUser;
+  accuracy: number | null;
+  acl: number | null;
+  accuracyOpening: number | null;
+  accuracyMiddlegame: number | null;
+  accuracyEndgame: number | null;
+  eloDelta: number | null;
+  resultQuality: ResultQuality;
+  reachedWinning: boolean;
+  reachedLosing: boolean;
+  converted: boolean;
+  saved: boolean;
+  timeTroubleFlag: boolean;
+  criticalPositions: number | null;
+  maxBlunderRun: number | null;
+}
+
+export interface CriticalMove {
+  plyIndex: number;
+  moveSan: string | null;
+  wpBefore: number;
+  wpAfter: number;
+  moveClass: string;
+  phase: string;
+  thinkTimeS: number | null;
+  beforeFen: string;
+  bestMove: string;
+}
+
+export interface MissedConversion {
+  plyIndex: number;
+  moveSan: string | null;
+  thinkTimeS: number | null;
+  beforeFen: string;
+  bestMove: string;
+}
+
+export interface GameMetricDetail extends GameMetricSummary {
+  phases: {
+    middlegameStartPly: number | null;
+    endgameStartPly: number | null;
+    timeOpeningS: number | null;
+    timeMiddlegameS: number | null;
+    timeEndgameS: number | null;
+  };
+  accuracyCritical: number | null;
+  accuracyQuiet: number | null;
+  timeAllocEfficiency: number | null;
+  avgMoveTimeS: number | null;
+  recoveryAccuracy: number | null;
+  timeTroubleErrors: number | null;
+  outOfBookPly: number | null;
+  outOfBookEcoFallback: number;
+  postBookAccuracy: number | null;
+  evalOpeningEndWp: number | null;
+  peakEvalWp: number | null;
+  troughEvalWp: number | null;
+  clocksAvailable: number;
+  engineDepthMin: number;
+  criticalMoves: CriticalMove[];
+  missedConversions: MissedConversion[];
+}
+
+export async function fetchGameMetricDetail(gameId: string): Promise<GameMetricDetail> {
+  const r = await fetch(`/api/metrics/game/${encodeURIComponent(gameId)}`);
+  if (!r.ok) {throw new Error("Failed to fetch game metric detail");}
+  return r.json() as Promise<GameMetricDetail>;
+}
+
+export async function fetchUserMetrics(username: string): Promise<GameMetricSummary[]> {
+  const r = await fetch(`/api/metrics/${encodeURIComponent(username)}`);
+  if (!r.ok) {throw new Error("Failed to fetch user metrics");}
+  return r.json() as Promise<GameMetricSummary[]>;
+}
+
+export interface ConsistencyResponse {
+  accuracy_stddev: number | null;
+  accuracy_mean: number | null;
+  games: number;
+}
+
+export interface VsOpponentBucket {
+  bucket: string;
+  games: number;
+  win_rate: number;
+  avg_accuracy: number | null;
+  avg_acl_middlegame: number | null;
+}
+
+export interface AclTrendPoint {
+  t: number;
+  acl: number;
+  rolling: number;
+}
+
+export interface LeakClosureRow {
+  tag: string;
+  first_half: number;
+  second_half: number;
+  delta: number;
+}
+
+export interface TprResponse {
+  tpr: number | null;
+  games: number;
+  score: number;
+  avg_opponent_elo: number | null;
+}
+
+export interface RepertoireRow {
+  eco: string;
+  opening: string | null;
+  games: number;
+  win_rate: number;
+  avg_accuracy: number | null;
+  avg_out_of_book_ply: number | null;
+}
+
+type TimeClass = "bullet" | "blitz" | "rapid" | "daily";
+
+async function fetchStat<T>(username: string, path: string, query = ""): Promise<T> {
+  const r = await fetch(`/api/stats/${encodeURIComponent(username)}/${path}${query}`);
+  if (!r.ok) {throw new Error(`Failed to fetch ${path}`);}
+  return r.json() as Promise<T>;
+}
+
+export async function fetchConsistency(username: string): Promise<ConsistencyResponse> {
+  return fetchStat<ConsistencyResponse>(username, "consistency");
+}
+
+export async function fetchVsOpponent(
+  username: string,
+  from?: number,
+  to?: number,
+): Promise<VsOpponentBucket[]> {
+  return fetchStat<VsOpponentBucket[]>(username, "vs-opponent", dateRangeQuery(from, to));
+}
+
+export async function fetchAclTrend(username: string, timeClass: TimeClass): Promise<AclTrendPoint[]> {
+  return fetchStat<AclTrendPoint[]>(username, "acl-trend", `?time_class=${timeClass}`);
+}
+
+export async function fetchLeakClosure(
+  username: string,
+  from?: number,
+  to?: number,
+): Promise<LeakClosureRow[]> {
+  return fetchStat<LeakClosureRow[]>(username, "leak-closure", dateRangeQuery(from, to));
+}
+
+export async function fetchTpr(username: string, timeClass: TimeClass): Promise<TprResponse> {
+  return fetchStat<TprResponse>(username, "tpr", `?time_class=${timeClass}`);
+}
+
+export async function fetchRepertoire(username: string, color: "white" | "black"): Promise<RepertoireRow[]> {
+  return fetchStat<RepertoireRow[]>(username, "repertoire", `?color=${color}`);
 }

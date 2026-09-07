@@ -6,8 +6,8 @@
 |---|---|
 | `client/src/study/glossary.ts` | Static typed array of `GlossaryEntry` records |
 | `client/src/pages/Study.tsx` | `/study` page — sticky nav + filter input + entry cards |
-| `client/src/App.tsx` | `/study` route registered |
-| `client/src/pages/Home.tsx` | "Study →" nav link (always visible) |
+| `client/src/App.tsx` | `/study` route registered (under the `AppShell` layout route) |
+| `client/src/components/AppShell.tsx` | "Study" link in the persistent top navbar |
 
 ## Purpose
 

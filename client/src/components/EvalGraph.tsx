@@ -1,5 +1,6 @@
 import { memo, useRef, useEffect, useMemo } from "react";
 import uPlot from "uplot";
+import { CHART } from "../lib/theme-colors";
 
 interface EvalDataPoint {
   moveIndex: number;
@@ -49,7 +50,7 @@ export const EvalGraph = memo(function EvalGraph({
         result.push({
           moveIndex: data[i].moveIndex,
           score: clamp(data[i].score),
-          fill: data[i].score > data[i - 1].score ? "#22c55e" : "#ef4444",
+          fill: data[i].score > data[i - 1].score ? CHART.good : CHART.bad,
         });
       }
     }
@@ -89,9 +90,9 @@ export const EvalGraph = memo(function EvalGraph({
       "pointer-events:none",
       "z-index:10",
       "white-space:nowrap",
-      "background:#1f2937",
-      "color:#e5e7eb",
-      "border:1px solid #374151",
+      `background:${CHART.tooltipBg}`,
+      `color:${CHART.tooltipFg}`,
+      `border:1px solid ${CHART.tooltipBorder}`,
     ].join(";");
     container.appendChild(tooltip);
 
@@ -112,7 +113,7 @@ export const EvalGraph = memo(function EvalGraph({
         },
         axes: [
           {
-            stroke: "#888",
+            stroke: CHART.axis,
             font: "10px system-ui, sans-serif",
             gap: 4,
             values: (_self: uPlot, splits: number[]) =>
@@ -121,7 +122,7 @@ export const EvalGraph = memo(function EvalGraph({
             ticks: { show: false },
           },
           {
-            stroke: "#888",
+            stroke: CHART.axis,
             font: "10px system-ui, sans-serif",
             size: 34,
             gap: 4,
@@ -134,7 +135,7 @@ export const EvalGraph = memo(function EvalGraph({
         series: [
           {}, // x series (required placeholder)
           {
-            stroke: "#3b82f6",
+            stroke: CHART.accent,
             width: 2,
             points: { show: false },
           },
@@ -195,7 +196,7 @@ export const EvalGraph = memo(function EvalGraph({
                   // Inner fill
                   ctx.beginPath();
                   ctx.arc(cx, cy, 4.5 * pxRatio, 0, Math.PI * 2);
-                  ctx.fillStyle = "#f59e0b";
+                  ctx.fillStyle = CHART.amber;
                   ctx.fill();
                 }
               }

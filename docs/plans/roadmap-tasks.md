@@ -1,6 +1,6 @@
 # PLAN.md — Implementation Tasks
 
-Granular task list for executing `docs/DESIGN.md`. Each task is self-contained: files, steps, schema/code shape, tests, acceptance criteria, dependencies. Order within a phase reflects build order; phases ship independently after Phase 0.
+Granular task list for executing `roadmap-design.md`. Each task is self-contained: files, steps, schema/code shape, tests, acceptance criteria, dependencies. Order within a phase reflects build order; phases ship independently after Phase 0.
 
 ## Conventions
 
@@ -145,7 +145,7 @@ CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
    export function classifySwing(wpDelta: number): MoveClass { ... }
    export function classToColor(c: MoveClass): string { ... } // CSS class
    ```
-2. Implementation uses Lichess WP-delta thresholds (0.1 / 0.2 / 0.3) per `docs/DESIGN.md#D1`. Initial: take `cpBefore`/`cpAfter` or `wpDelta` directly — pick the lower-friction signature.
+2. Implementation uses Lichess WP-delta thresholds (0.1 / 0.2 / 0.3) per `roadmap-design.md#D1`. Initial: take `cpBefore`/`cpAfter` or `wpDelta` directly — pick the lower-friction signature.
 3. `Analysis.tsx`: remove inline `classifySwing`, import from lib. Replace `moveClasses: string[]` memo with `moveClassifications: MoveClass[]`. Derive CSS via `classToColor()` at render.
 4. `MoveList.tsx`: prop changes from `moveClasses: string[]` to `classifications: MoveClass[]` + internal `classToColor()` call.
 

@@ -8,7 +8,7 @@
 | `server/lib/openings.ts` | TSV loader + `classifyOpening(sanMoves)` longest-prefix match |
 | `server/lib/backfill.ts` | Hybrid opening backfill on startup |
 | `server/data/openings/{a..e}.tsv` | lichess-org/chess-openings (CC0, ~3700 lines) |
-| `client/src/pages/Stats.tsx` | Tabbed dashboard page (`/stats?username=…`) |
+| `client/src/pages/Stats.tsx` | Sectioned dashboard page (`/stats?username=…`) — Overview / Trends / Openings / Patterns |
 | `client/src/components/EloTrendChart.tsx` | uPlot line chart (rating series) |
 | `client/src/components/AccuracyTrendChart.tsx` | uPlot line chart (per-game accuracy series, green, Y pinned 0–100) |
 
@@ -50,17 +50,27 @@ Hybrid: PGN `[ECO]` / `[Opening]` headers first, fall back to `classifyOpening(p
 
 ## UI
 
-`/stats?username=X` page has 9 tabs:
+`/stats?username=X` is a **sectioned dashboard** (a `Tabs` section-nav, not 15 flat tabs). Each section
+shows several panels at once so multiple metrics read at a glance (see [ui-ux.md](ui-ux.md)). Panels are
+`Card`s; KPIs are `StatTile`s; charts/heatmap use the shared `lib/theme-colors.ts` palette.
 
-- **By Side** — 2-column card grid showing W-D-L, win rate, accuracy, blunders/game.
-- **By Time Class / By Opening / By Rating** — HTML bar charts (CSS bars, no canvas).
-- **Elo Trend** — uPlot line chart with time-class selector (`EloTrendChart`).
-- **Accuracy Trend** — uPlot line chart with time-class selector (`AccuracyTrendChart`); Y pinned to `[0, 100]` for cross-time-class comparability.
-- **Time of Day** — 7×24 HTML table; cell opacity scales with game count, tooltip shows win rate.
-- **Motifs** — recurring-mistake list with example deep-links (`/analysis/:id?move=N`).
-- **Drill** — total attempts, accuracy, due-today, streak (drives the FSRS panel on `/drill`).
+| Section | Panels |
+|---|---|
+| **Overview** (default) | By side · Performance/TPR (time-class `SegmentedControl`) · Consistency · Drill progress · Win rate by time class (CSS bars) |
+| **Trends** | Elo / Accuracy charts + ACL-trend table, driven by one shared time-class `SegmentedControl` |
+| **Openings** | Repertoire (white/black toggle) · By opening (CSS bars) |
+| **Patterns** | Blundered motifs (deep-links `/analysis/:id?move=N`) · Leak closure · By opponent rating · Win rate by rating bucket · Time-of-day 7×24 heatmap |
 
-Reached from Home via a "Stats →" link in the header (visible once a username is loaded).
+The **Patterns** section is windowed to the **last `PATTERN_WINDOW_DAYS` (60) days**: it computes a stable
+`from = now − 60d` (epoch seconds, memoised once per mount) and threads it as the `from` query param into
+the motifs / leak-closure / vs-opponent / rating-bucket win-rate / time-of-day requests. This keeps
+weakness data aligned with the player's current level instead of mixing in much older, lower-rated games.
+The corresponding `compute*` helpers in `server/routes/stats.ts` accept optional `from`/`to` epoch bounds
+via the shared `parseDateRange(c)` / `dateRange(column, from, to)` helpers at the top of the file; add a
+window to any other aggregate by threading those two calls through. `:username` is validated once by a
+`stats.use("/stats/:username/*")` middleware, and the user-won/lost SQL predicates are the `USER_WON` /
+`USER_LOST` constants. Other sections remain full-history. Reached from the persistent top
+navbar's "Stats" link (carries `?username=`).
 
 ## Migrations introduced in Phase 2
 

@@ -1,15 +1,63 @@
 @import "tailwindcss";
 
+/* ---------------------------------------------------------------------------
+   Single committed dark theme — warm neutrals that complement the brown board.
+   Tailwind v4 generates utilities (bg-*, text-*, border-*) from these tokens.
+   There is intentionally NO light theme: drop `dark:` variants everywhere.
+--------------------------------------------------------------------------- */
 @theme {
-  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif,
-    "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+  --font-sans: "Hanken Grotesk", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono Variable", ui-monospace, "SFMono-Regular", monospace;
+
+  /* Surfaces */
+  --color-canvas: #16140f;
+  --color-surface: #211f1a;
+  --color-raised: #2b2924;
+  --color-line: #3a3833;
+
+  /* Text */
+  --color-fg: #ece9e3;
+  --color-muted: #a8a39a;
+  --color-faint: #756f66;
+
+  /* Brand / interaction */
+  --color-accent: #6f9fe8;
+  --color-accent-hover: #87b1f0;
+  --color-on-accent: #0e1320;
+
+  /* Semantic — move quality & results */
+  --color-best: #7cb342;
+  --color-good: #7cb342;
+  --color-win: #7cb342;
+  --color-inaccuracy: #d6b656;
+  --color-mistake: #df8a3c;
+  --color-blunder: #d65a52;
+  --color-loss: #d65a52;
+  --color-draw: #a8a39a;
+  --color-info: #6f9fe8;
+  --color-swindle: #c08457;
 }
 
 html,
 body {
-  @apply bg-white dark:bg-gray-950;
+  @apply bg-canvas text-fg font-sans;
+  color-scheme: dark;
+}
 
-  @media (prefers-color-scheme: dark) {
-    color-scheme: dark;
-  }
+/* Thin, theme-matched scrollbars for the internal-scroll panels (move list,
+   metrics rail, dashboard sections). */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-line) transparent;
+}
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-thumb {
+  background-color: var(--color-line);
+  border-radius: 4px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
 }

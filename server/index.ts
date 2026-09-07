@@ -7,14 +7,19 @@ import analyze from "./routes/analyze";
 import stats from "./routes/stats";
 import positions from "./routes/positions";
 import drill from "./routes/drill";
+import metrics from "./routes/metrics";
 import { rateLimit } from "./lib/rate-limit";
-import { backfillGameHeaders, backfillAnalysisFenKeys, backfillMotifs } from "./lib/backfill";
+import { backfillGameHeaders, backfillAnalysisFenKeys, backfillMotifs, backfillIsStandard } from "./lib/backfill";
 import { loadOpenings } from "./lib/openings";
 
 loadOpenings();
 const backfillCount = backfillGameHeaders();
 if (backfillCount > 0) {
   console.log(`Backfilled headers for ${String(backfillCount)} games`);
+}
+const stdCount = backfillIsStandard();
+if (stdCount > 0) {
+  console.log(`Backfilled is_standard for ${String(stdCount)} games`);
 }
 const fenKeyCount = backfillAnalysisFenKeys();
 if (fenKeyCount > 0) {
@@ -49,6 +54,7 @@ app.route("/api", analyze);
 app.route("/api", stats);
 app.route("/api", positions);
 app.route("/api", drill);
+app.route("/api", metrics);
 
 // Global error handler — never leak internal details to clients
 app.onError((err, c) => {

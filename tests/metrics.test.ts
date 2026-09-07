@@ -5,6 +5,8 @@ import {
   moveAccuracy,
   classifyMove,
   gameMetrics,
+  plyAccuracies,
+  combineAccuracy,
 } from "../server/lib/metrics";
 import type { AnalysisRow } from "../server/lib/engine";
 
@@ -105,6 +107,41 @@ describe("classifyMove", () => {
 
   it("50 → 10 (wpDelta 40pp / 0.40) classified as blunder", () => {
     expect(classifyMove(50, 10)).toBe("blunder");
+  });
+});
+
+// ── Lichess accuracy aggregation (plyAccuracies + combineAccuracy) ─────────────
+
+describe("plyAccuracies + combineAccuracy", () => {
+  it("all-perfect game scores ~100", () => {
+    const flat = [50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50];
+    const acc = combineAccuracy(plyAccuracies(flat));
+    expect(acc).not.toBeNull();
+    expect(acc ?? 0).toBeGreaterThan(99);
+  });
+
+  it("window size is clamp(floor(plies/10), 2, 8)", () => {
+    // 5 plies → 6 win% values → windowSize 2 → one entry per ply
+    expect(plyAccuracies([50, 50, 50, 50, 50, 50])).toHaveLength(5);
+    // 0 plies → empty
+    expect(plyAccuracies([50])).toHaveLength(0);
+  });
+
+  it("harmonic mean punishes one big blunder more than a plain average", () => {
+    // Nine perfect moves (100) and one catastrophic move (~0).
+    const entries = [
+      ...Array.from({ length: 9 }, () => ({ accuracy: 100, weight: 1 })),
+      { accuracy: 0, weight: 1 },
+    ];
+    const combined = combineAccuracy(entries);
+    const plainAverage = (9 * 100 + 0) / 10; // 90
+    expect(combined).not.toBeNull();
+    // Harmonic-mean half drags the result well below the plain 90 average.
+    expect(combined ?? 0).toBeLessThan(plainAverage);
+  });
+
+  it("returns null for no entries", () => {
+    expect(combineAccuracy([])).toBeNull();
   });
 });
 

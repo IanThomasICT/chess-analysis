@@ -1,7 +1,25 @@
 import { describe, expect, test, beforeEach } from "bun:test";
 import { Database } from "bun:sqlite";
 import { migrations, type Migration } from "../server/lib/db";
-import { computeBySide, computeEloTrend, computeByTimeOfDay, computeWinRateSlice, computeAccuracyTrend, computeMotifStats, computeDrillProgress } from "../server/routes/stats";
+import {
+  computeBySide,
+  computeEloTrend,
+  computeByTimeOfDay,
+  computeWinRateSlice,
+  computeAccuracyTrend,
+  computeMotifStats,
+  computeDrillProgress,
+  computeConsistency,
+  computeSessionFatigue,
+  computeVsOpponent,
+  computeAclTrend,
+  computeLeakClosure,
+  computeTpr,
+  dpFromScore,
+  computeRepertoire,
+  computeCounterplay,
+  computeEndgameConversion,
+} from "../server/routes/stats";
 
 // ---------------------------------------------------------------------------
 // Schema helpers — apply migrations 1-4 to an in-memory DB
@@ -831,5 +849,573 @@ describe("computeDrillProgress", () => {
 
     // Streak should only be 1 (today), not 2, because yesterday is missing
     expect(result.current_streak).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Helpers for new endpoint tests
+// ---------------------------------------------------------------------------
+
+function insertGameFull(
+  database: Database,
+  id: string,
+  username: string,
+  white: string,
+  black: string,
+  result: string,
+  opts: {
+    timeClass?: string;
+    endTime?: number;
+    whiteElo?: number | null;
+    blackElo?: number | null;
+    userElo?: number | null;
+    eco?: string | null;
+    opening?: string | null;
+  } = {},
+): void {
+  database
+    .prepare(
+      `INSERT INTO games
+         (id, username, pgn, white, black, result, time_class, end_time,
+          white_elo, black_elo, user_elo, eco, opening)
+       VALUES (?, ?, '', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(
+      id,
+      username,
+      white,
+      black,
+      result,
+      opts.timeClass ?? null,
+      opts.endTime ?? null,
+      opts.whiteElo ?? null,
+      opts.blackElo ?? null,
+      opts.userElo ?? null,
+      opts.eco ?? null,
+      opts.opening ?? null,
+    );
+}
+
+function insertMetricsFull(
+  database: Database,
+  gameId: string,
+  opts: {
+    accuracyWhite?: number;
+    accuracyBlack?: number;
+    blundersWhite?: number;
+    blundersBlack?: number;
+    aclWhite?: number;
+    aclBlack?: number;
+  } = {},
+): void {
+  database
+    .prepare(
+      `INSERT INTO game_metrics
+         (game_id, accuracy_white, accuracy_black,
+          blunders_white, mistakes_white, inaccuracies_white,
+          blunders_black, mistakes_black, inaccuracies_black,
+          acl_white, acl_black, computed_at)
+       VALUES (?, ?, ?, ?, 0, 0, ?, 0, 0, ?, ?, 0)`,
+    )
+    .run(
+      gameId,
+      opts.accuracyWhite ?? 80,
+      opts.accuracyBlack ?? 80,
+      opts.blundersWhite ?? 0,
+      opts.blundersBlack ?? 0,
+      opts.aclWhite ?? 0,
+      opts.aclBlack ?? 0,
+    );
+}
+
+function insertGameMetricsExt(
+  database: Database,
+  gameId: string,
+  opts: {
+    aclMiddlegame?: number | null;
+    accuracyEndgame?: number | null;
+    peakEvalWp?: number | null;
+    troughEvalWp?: number | null;
+    outOfBookPly?: number | null;
+  } = {},
+): void {
+  database
+    .prepare(
+      `INSERT INTO game_metrics_ext
+         (game_id, metrics_version, analysis_sig, multipv_max,
+          accuracy_opening, accuracy_middlegame, accuracy_endgame,
+          acl_opening, acl_middlegame, acl_endgame,
+          middlegame_start_ply, endgame_start_ply,
+          time_opening_s, time_middlegame_s, time_endgame_s, avg_move_time_s,
+          accuracy_critical, accuracy_quiet, critical_positions,
+          time_alloc_efficiency,
+          max_blunder_run, recovery_accuracy,
+          time_trouble_moves, time_trouble_errors,
+          peak_eval_wp, trough_eval_wp,
+          out_of_book_ply, out_of_book_eco_fallback, post_book_accuracy,
+          eval_opening_end_wp,
+          user_moves, clocks_available, engine_depth_min, computed_at)
+       VALUES (?, 1, '', 1,
+               NULL, NULL, ?,
+               NULL, ?, NULL,
+               NULL, NULL,
+               NULL, NULL, NULL, NULL,
+               NULL, NULL, NULL,
+               NULL,
+               NULL, NULL,
+               NULL, NULL,
+               ?, ?,
+               ?, 0, NULL,
+               NULL,
+               0, 0, 0, 0)`,
+    )
+    .run(
+      gameId,
+      opts.accuracyEndgame ?? null,
+      opts.aclMiddlegame ?? null,
+      opts.peakEvalWp ?? null,
+      opts.troughEvalWp ?? null,
+      opts.outOfBookPly ?? null,
+    );
+}
+
+function insertBlunderTagNew(
+  database: Database,
+  gameId: string,
+  moveIndex: number,
+  tag: string,
+): void {
+  database
+    .prepare(`INSERT INTO blunder_tags (game_id, move_index, tag) VALUES (?, ?, ?)`)
+    .run(gameId, moveIndex, tag);
+}
+
+// ---------------------------------------------------------------------------
+// computeConsistency (R21)
+// ---------------------------------------------------------------------------
+
+describe("computeConsistency", () => {
+  test("no games → all nulls, games=0", () => {
+    const result = computeConsistency(db, "alice");
+    expect(result.games).toBe(0);
+    expect(result.accuracy_mean).toBeNull();
+    expect(result.accuracy_stddev).toBeNull();
+  });
+
+  test("single game → stddev=0, mean=accuracy", () => {
+    insertGameFull(db, "g1", "alice", "alice", "bob", "1-0");
+    insertMetricsFull(db, "g1", { accuracyWhite: 80 });
+
+    const result = computeConsistency(db, "alice");
+    expect(result.games).toBe(1);
+    expect(result.accuracy_mean).toBeCloseTo(80, 5);
+    expect(result.accuracy_stddev).toBeCloseTo(0, 5);
+  });
+
+  test("two games with different accuracies → correct mean and stddev", () => {
+    // white: 70 and 90 → mean=80, variance=(100+100)/2=100, stddev=10
+    insertGameFull(db, "g1", "alice", "alice", "bob", "1-0");
+    insertGameFull(db, "g2", "alice", "alice", "bob", "1-0");
+    insertMetricsFull(db, "g1", { accuracyWhite: 70 });
+    insertMetricsFull(db, "g2", { accuracyWhite: 90 });
+
+    const result = computeConsistency(db, "alice");
+    expect(result.games).toBe(2);
+    expect(result.accuracy_mean).toBeCloseTo(80, 5);
+    expect(result.accuracy_stddev).toBeCloseTo(10, 5);
+  });
+
+  test("games without metrics are excluded", () => {
+    insertGameFull(db, "g1", "alice", "alice", "bob", "1-0");
+    insertGameFull(db, "g2", "alice", "alice", "bob", "1-0");
+    insertMetricsFull(db, "g1", { accuracyWhite: 80 });
+    // g2 has no metrics
+
+    const result = computeConsistency(db, "alice");
+    expect(result.games).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// computeSessionFatigue (R22)
+// ---------------------------------------------------------------------------
+
+describe("computeSessionFatigue", () => {
+  test("no games → empty array", () => {
+    const result = computeSessionFatigue(db, "alice");
+    expect(result).toEqual([]);
+  });
+
+  test("3 consecutive games in same session → all get different game_in_session indexes", () => {
+    const t0 = 1_000_000;
+    insertGameFull(db, "g1", "alice", "alice", "bob", "1-0", { endTime: t0 });
+    insertGameFull(db, "g2", "alice", "alice", "bob", "0-1", { endTime: t0 + 1800 }); // +30 min
+    insertGameFull(db, "g3", "alice", "alice", "bob", "1-0", { endTime: t0 + 3000 }); // +50 min
+
+    const result = computeSessionFatigue(db, "alice");
+    const indexes = result.map((b) => b.game_in_session).sort((a, b) => a - b);
+    expect(indexes).toEqual([1, 2, 3]);
+  });
+
+  test("gap ≥ 60 min starts new session — game_in_session resets to 1", () => {
+    const t0 = 1_000_000;
+    const SESSION_GAP = 61 * 60; // 61 minutes
+    insertGameFull(db, "g1", "alice", "alice", "bob", "1-0", { endTime: t0 });
+    insertGameFull(db, "g2", "alice", "alice", "bob", "1-0", { endTime: t0 + SESSION_GAP });
+
+    const result = computeSessionFatigue(db, "alice");
+    // Both are game_in_session=1 (two separate sessions)
+    const bucket1 = result.find((b) => b.game_in_session === 1);
+    expect(bucket1).toBeDefined();
+    expect(bucket1!.games).toBe(2); // both sessions contribute to index 1 bucket
+  });
+
+  test("win_rate calculation: 2 wins out of 3 games at index 1", () => {
+    const t0 = 1_000_000;
+    const GAP = 61 * 60;
+    // 3 separate sessions, each first game
+    insertGameFull(db, "g1", "alice", "alice", "bob", "1-0", { endTime: t0 });
+    insertGameFull(db, "g2", "alice", "alice", "bob", "1-0", { endTime: t0 + GAP });
+    insertGameFull(db, "g3", "alice", "alice", "bob", "0-1", { endTime: t0 + 2 * GAP });
+
+    const result = computeSessionFatigue(db, "alice");
+    const bucket1 = result.find((b) => b.game_in_session === 1);
+    expect(bucket1).toBeDefined();
+    expect(bucket1!.games).toBe(3);
+    expect(bucket1!.wins).toBe(2);
+    expect(bucket1!.win_rate).toBeCloseTo(2 / 3, 5);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// computeVsOpponent (R23)
+// ---------------------------------------------------------------------------
+
+describe("computeVsOpponent", () => {
+  test("no games → empty array", () => {
+    const result = computeVsOpponent(db, "alice");
+    expect(result).toEqual([]);
+  });
+
+  test("correct rating buckets assigned", () => {
+    // diff < -200 → '<-200'
+    insertGameFull(db, "g1", "alice", "alice", "bob", "1-0", {
+      userElo: 1500, whiteElo: 1500, blackElo: 1200,
+    });
+    // diff +250 → '>+200'
+    insertGameFull(db, "g2", "alice", "alice", "bob", "0-1", {
+      userElo: 1500, whiteElo: 1500, blackElo: 1750,
+    });
+    // null elo → 'unrated'
+    insertGameFull(db, "g3", "alice", "alice", "bob", "1/2-1/2", {
+      userElo: null, whiteElo: null, blackElo: null,
+    });
+
+    const result = computeVsOpponent(db, "alice");
+    const buckets = result.map((r) => r.bucket);
+    expect(buckets).toContain("<-200");
+    expect(buckets).toContain(">+200");
+    expect(buckets).toContain("unrated");
+  });
+
+  test("win_rate computed correctly within a bucket", () => {
+    // Two games in ±100 bucket: 1 win, 1 loss
+    insertGameFull(db, "g1", "alice", "alice", "bob", "1-0", {
+      userElo: 1500, whiteElo: 1500, blackElo: 1530,
+    });
+    insertGameFull(db, "g2", "alice", "alice", "bob", "0-1", {
+      userElo: 1500, whiteElo: 1500, blackElo: 1470,
+    });
+
+    const result = computeVsOpponent(db, "alice");
+    const bucket = result.find((r) => r.bucket === "±100");
+    expect(bucket).toBeDefined();
+    expect(bucket!.games).toBe(2);
+    expect(bucket!.win_rate).toBeCloseTo(0.5, 5);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// computeAclTrend (R27)
+// ---------------------------------------------------------------------------
+
+describe("computeAclTrend", () => {
+  test("no games → empty array", () => {
+    const result = computeAclTrend(db, "alice", "blitz");
+    expect(result).toEqual([]);
+  });
+
+  test("single game → rolling equals acl", () => {
+    insertGameFull(db, "g1", "alice", "alice", "bob", "1-0", { timeClass: "blitz", endTime: 1000 });
+    insertMetricsFull(db, "g1", { aclWhite: 15 });
+
+    const result = computeAclTrend(db, "alice", "blitz");
+    expect(result).toHaveLength(1);
+    expect(result[0].t).toBe(1000);
+    expect(result[0].acl).toBeCloseTo(15, 5);
+    expect(result[0].rolling).toBeCloseTo(15, 5);
+  });
+
+  test("rolling mean is trailing average over last N games", () => {
+    // 3 games with ACL 10, 20, 30 → rolling at pos 3 = (10+20+30)/3 = 20
+    insertGameFull(db, "g1", "alice", "alice", "bob", "1-0", { timeClass: "blitz", endTime: 1000 });
+    insertGameFull(db, "g2", "alice", "alice", "bob", "1-0", { timeClass: "blitz", endTime: 2000 });
+    insertGameFull(db, "g3", "alice", "alice", "bob", "1-0", { timeClass: "blitz", endTime: 3000 });
+    insertMetricsFull(db, "g1", { aclWhite: 10 });
+    insertMetricsFull(db, "g2", { aclWhite: 20 });
+    insertMetricsFull(db, "g3", { aclWhite: 30 });
+
+    const result = computeAclTrend(db, "alice", "blitz");
+    expect(result).toHaveLength(3);
+    expect(result[0].rolling).toBeCloseTo(10, 5); // window=[10]
+    expect(result[1].rolling).toBeCloseTo(15, 5); // window=[10,20]
+    expect(result[2].rolling).toBeCloseTo(20, 5); // window=[10,20,30]
+  });
+
+  test("time_class filter works", () => {
+    insertGameFull(db, "g1", "alice", "alice", "bob", "1-0", { timeClass: "blitz", endTime: 1000 });
+    insertGameFull(db, "g2", "alice", "alice", "bob", "1-0", { timeClass: "rapid", endTime: 2000 });
+    insertMetricsFull(db, "g1", { aclWhite: 5 });
+    insertMetricsFull(db, "g2", { aclWhite: 8 });
+
+    const result = computeAclTrend(db, "alice", "blitz");
+    expect(result).toHaveLength(1);
+    expect(result[0].acl).toBeCloseTo(5, 5);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// computeLeakClosure (R28)
+// ---------------------------------------------------------------------------
+
+describe("computeLeakClosure", () => {
+  test("no games → empty array", () => {
+    const result = computeLeakClosure(db, "alice");
+    expect(result).toEqual([]);
+  });
+
+  test("tag appearing only in first half → negative or zero delta", () => {
+    // 4 games: 2 old, 2 new; median end_time between old and new
+    const t1 = 1000, t2 = 2000, t3 = 3000, t4 = 4000;
+    insertGameFull(db, "g1", "alice", "alice", "bob", "0-1", { endTime: t1 });
+    insertGameFull(db, "g2", "alice", "alice", "bob", "0-1", { endTime: t2 });
+    insertGameFull(db, "g3", "alice", "alice", "bob", "0-1", { endTime: t3 });
+    insertGameFull(db, "g4", "alice", "alice", "bob", "0-1", { endTime: t4 });
+    // fork blunder on move_index=1 (white mover, alice plays white)
+    insertBlunderTagNew(db, "g1", 1, "fork");
+    insertBlunderTagNew(db, "g2", 1, "fork");
+    // no fork in second half
+
+    const result = computeLeakClosure(db, "alice");
+    const forkRow = result.find((r) => r.tag === "fork");
+    expect(forkRow).toBeDefined();
+    expect(forkRow!.first_half).toBeGreaterThan(0);
+    expect(forkRow!.delta).toBeLessThanOrEqual(0); // improving (fewer in second half)
+  });
+
+  test("tag in both halves → delta reflects difference", () => {
+    const t1 = 1000, t2 = 2000, t3 = 3000, t4 = 4000;
+    insertGameFull(db, "g1", "alice", "alice", "bob", "0-1", { endTime: t1 });
+    insertGameFull(db, "g2", "alice", "alice", "bob", "0-1", { endTime: t2 });
+    insertGameFull(db, "g3", "alice", "alice", "bob", "0-1", { endTime: t3 });
+    insertGameFull(db, "g4", "alice", "alice", "bob", "0-1", { endTime: t4 });
+    insertBlunderTagNew(db, "g1", 1, "pin");
+    insertBlunderTagNew(db, "g3", 1, "pin");
+    insertBlunderTagNew(db, "g4", 1, "pin");
+
+    const result = computeLeakClosure(db, "alice");
+    const pinRow = result.find((r) => r.tag === "pin");
+    expect(pinRow).toBeDefined();
+    expect(pinRow!.delta).toBe(pinRow!.second_half - pinRow!.first_half);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// dpFromScore + computeTpr (R29)
+// ---------------------------------------------------------------------------
+
+describe("dpFromScore", () => {
+  test("p=0.5 → 0 (symmetric draw)", () => {
+    expect(dpFromScore(0.5)).toBeCloseTo(0, 5);
+  });
+
+  test("p=0.99 → 677 (clamp high)", () => {
+    expect(dpFromScore(0.99)).toBeCloseTo(677, 2);
+  });
+
+  test("p=0.01 → -677 (clamp low)", () => {
+    expect(dpFromScore(0.01)).toBeCloseTo(-677, 2);
+  });
+
+  test("symmetry: dp(1-p) = -dp(p)", () => {
+    const p = 0.75;
+    expect(dpFromScore(p)).toBeCloseTo(-dpFromScore(1 - p), 5);
+  });
+});
+
+describe("computeTpr", () => {
+  test("no games → tpr=null, games=0", () => {
+    const result = computeTpr(db, "alice", "blitz");
+    expect(result.tpr).toBeNull();
+    expect(result.games).toBe(0);
+  });
+
+  test("all wins → tpr > avg_opponent_elo", () => {
+    insertGameFull(db, "g1", "alice", "alice", "bob", "1-0", {
+      timeClass: "blitz", userElo: 1500, whiteElo: 1500, blackElo: 1600,
+    });
+    insertGameFull(db, "g2", "alice", "alice", "bob", "1-0", {
+      timeClass: "blitz", userElo: 1500, whiteElo: 1500, blackElo: 1600,
+    });
+
+    const result = computeTpr(db, "alice", "blitz");
+    expect(result.tpr).not.toBeNull();
+    expect(result.tpr!).toBeGreaterThan(1600);
+    expect(result.avg_opponent_elo).toBeCloseTo(1600, 5);
+  });
+
+  test("50% score → tpr ≈ avg_opponent_elo", () => {
+    insertGameFull(db, "g1", "alice", "alice", "bob", "1-0", {
+      timeClass: "blitz", userElo: 1500, whiteElo: 1500, blackElo: 1600,
+    });
+    insertGameFull(db, "g2", "alice", "alice", "bob", "0-1", {
+      timeClass: "blitz", userElo: 1500, whiteElo: 1500, blackElo: 1600,
+    });
+
+    const result = computeTpr(db, "alice", "blitz");
+    expect(result.score).toBeCloseTo(1, 5);
+    expect(result.tpr).toBeCloseTo(1600, 1); // dp(0.5)=0 → tpr=avg_opp_elo
+  });
+});
+
+// ---------------------------------------------------------------------------
+// computeRepertoire (R30)
+// ---------------------------------------------------------------------------
+
+describe("computeRepertoire", () => {
+  test("no games → empty array", () => {
+    const result = computeRepertoire(db, "alice", "white");
+    expect(result).toEqual([]);
+  });
+
+  test("groups by ECO for user playing white", () => {
+    insertGameFull(db, "g1", "alice", "alice", "bob", "1-0", { eco: "B20", opening: "Sicilian" });
+    insertGameFull(db, "g2", "alice", "alice", "bob", "0-1", { eco: "B20", opening: "Sicilian" });
+    insertGameFull(db, "g3", "alice", "alice", "bob", "1-0", { eco: "C50", opening: "Italian" });
+
+    const result = computeRepertoire(db, "alice", "white");
+    const b20 = result.find((r) => r.eco === "B20");
+    const c50 = result.find((r) => r.eco === "C50");
+
+    expect(b20).toBeDefined();
+    expect(b20!.games).toBe(2);
+    expect(b20!.win_rate).toBeCloseTo(0.5, 5);
+    expect(c50).toBeDefined();
+    expect(c50!.games).toBe(1);
+    expect(c50!.win_rate).toBe(1);
+  });
+
+  test("color=black only includes games where user played black", () => {
+    insertGameFull(db, "g1", "alice", "alice", "bob", "1-0", { eco: "A00" }); // alice white
+    insertGameFull(db, "g2", "alice", "bob", "alice", "0-1", { eco: "D10" }); // alice black
+
+    const result = computeRepertoire(db, "alice", "black");
+    expect(result.some((r) => r.eco === "A00")).toBe(false);
+    expect(result.some((r) => r.eco === "D10")).toBe(true);
+  });
+
+  test("includes avg_out_of_book_ply from game_metrics_ext", () => {
+    insertGameFull(db, "g1", "alice", "alice", "bob", "1-0", { eco: "E60" });
+    insertGameMetricsExt(db, "g1", { outOfBookPly: 12 });
+
+    const result = computeRepertoire(db, "alice", "white");
+    const e60 = result.find((r) => r.eco === "E60");
+    expect(e60).toBeDefined();
+    expect(e60!.avg_out_of_book_ply).toBeCloseTo(12, 5);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// computeCounterplay (R31)
+// ---------------------------------------------------------------------------
+
+describe("computeCounterplay", () => {
+  test("no ext rows → games_reached_losing=0, save_rate=null", () => {
+    const result = computeCounterplay(db, "alice");
+    expect(result.games_reached_losing).toBe(0);
+    expect(result.saves).toBe(0);
+    expect(result.save_rate).toBeNull();
+  });
+
+  test("trough_eval_wp=15 (<=20) → reaches losing; win counted as save", () => {
+    insertGameFull(db, "g1", "alice", "alice", "bob", "1-0");
+    insertGameMetricsExt(db, "g1", { troughEvalWp: 15 });
+
+    const result = computeCounterplay(db, "alice");
+    expect(result.games_reached_losing).toBe(1);
+    expect(result.saves).toBe(1);
+    expect(result.save_rate).toBeCloseTo(1, 5);
+  });
+
+  test("trough_eval_wp=50 (>20) → does NOT reach losing", () => {
+    insertGameFull(db, "g1", "alice", "alice", "bob", "1-0");
+    insertGameMetricsExt(db, "g1", { troughEvalWp: 50 });
+
+    const result = computeCounterplay(db, "alice");
+    expect(result.games_reached_losing).toBe(0);
+  });
+
+  test("reached losing but user lost → not a save", () => {
+    insertGameFull(db, "g1", "alice", "alice", "bob", "0-1");
+    insertGameMetricsExt(db, "g1", { troughEvalWp: 10 });
+
+    const result = computeCounterplay(db, "alice");
+    expect(result.games_reached_losing).toBe(1);
+    expect(result.saves).toBe(0);
+    expect(result.save_rate).toBeCloseTo(0, 5);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// computeEndgameConversion (R32)
+// ---------------------------------------------------------------------------
+
+describe("computeEndgameConversion", () => {
+  test("no ext rows → all zeros, conversion_rate=null", () => {
+    const result = computeEndgameConversion(db, "alice");
+    expect(result.games_reached_winning).toBe(0);
+    expect(result.conversions).toBe(0);
+    expect(result.conversion_rate).toBeNull();
+    expect(result.avg_endgame_accuracy).toBeNull();
+  });
+
+  test("peak_eval_wp=85 (>=80) → reaches winning; win counted as conversion", () => {
+    insertGameFull(db, "g1", "alice", "alice", "bob", "1-0");
+    insertGameMetricsExt(db, "g1", { peakEvalWp: 85, accuracyEndgame: 90 });
+
+    const result = computeEndgameConversion(db, "alice");
+    expect(result.games_reached_winning).toBe(1);
+    expect(result.conversions).toBe(1);
+    expect(result.conversion_rate).toBeCloseTo(1, 5);
+    expect(result.avg_endgame_accuracy).toBeCloseTo(90, 5);
+  });
+
+  test("peak_eval_wp=70 (<80) → does NOT reach winning", () => {
+    insertGameFull(db, "g1", "alice", "alice", "bob", "1-0");
+    insertGameMetricsExt(db, "g1", { peakEvalWp: 70 });
+
+    const result = computeEndgameConversion(db, "alice");
+    expect(result.games_reached_winning).toBe(0);
+  });
+
+  test("reached winning but user drew → not a conversion", () => {
+    insertGameFull(db, "g1", "alice", "alice", "bob", "1/2-1/2");
+    insertGameMetricsExt(db, "g1", { peakEvalWp: 85, accuracyEndgame: 75 });
+
+    const result = computeEndgameConversion(db, "alice");
+    expect(result.games_reached_winning).toBe(1);
+    expect(result.conversions).toBe(0);
+    expect(result.conversion_rate).toBeCloseTo(0, 5);
+    expect(result.avg_endgame_accuracy).toBeCloseTo(75, 5);
   });
 });

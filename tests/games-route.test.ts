@@ -123,6 +123,12 @@ describe("buildGameRow", () => {
     expect(row.username).toBe("alice");
   });
 
+  test("vs_bot is derived from the PGN [Event] header", () => {
+    expect(buildGameRow("alice", makeGame()).vs_bot).toBe(0); // "Live Chess"
+    const botPgn = FULL_PGN.replace('[Event "Live Chess"]', '[Event "Play vs Coach"]');
+    expect(buildGameRow("alice", makeGame({ pgn: botPgn })).vs_bot).toBe(1);
+  });
+
   test("white wins → result is '1-0'", () => {
     const row = buildGameRow("alice", makeGame());
     expect(row.result).toBe("1-0");
@@ -247,6 +253,62 @@ let testDb: Database;
 
 beforeEach(() => {
   testDb = makeTestDb();
+});
+
+/** Insert an analysis row at a specific multipv_rank (post-migration schema). */
+function insertRankRow(
+  database: Database,
+  gameId: string,
+  moveIndex: number,
+  rank: number,
+  scoreCp: number,
+): void {
+  database
+    .prepare(
+      `INSERT INTO analysis
+         (game_id, move_index, multipv_rank, fen, fen_key, move_san, score_cp, score_mate, best_move, pv, depth)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(
+      gameId,
+      moveIndex,
+      rank,
+      `fen_${String(moveIndex)}`,
+      null,
+      moveIndex > 0 ? "e4" : null,
+      scoreCp,
+      null,
+      "e2e4",
+      null,
+      20,
+    );
+}
+
+describe("computeAndCacheMetrics — multipv_rank isolation (0b regression)", () => {
+  test("ranks 2/3 are excluded; deep game metrics match a rank-1-only game", () => {
+    // gameA: rank-1 only, oscillating evals.
+    insertTestGame(testDb, "mpv-a");
+    for (let i = 0; i < 12; i++) {
+      insertRankRow(testDb, "mpv-a", i, 1, i % 2 === 0 ? 20 : -20);
+    }
+    // gameB: identical rank-1 rows + garbage rank-2/3 rows that would wreck the
+    // fold if they leaked into gameMetrics.
+    insertTestGame(testDb, "mpv-b");
+    for (let i = 0; i < 12; i++) {
+      insertRankRow(testDb, "mpv-b", i, 1, i % 2 === 0 ? 20 : -20);
+      insertRankRow(testDb, "mpv-b", i, 2, 5000);
+      insertRankRow(testDb, "mpv-b", i, 3, -5000);
+    }
+
+    const a = computeAndCacheMetrics(testDb, "mpv-a");
+    const b = computeAndCacheMetrics(testDb, "mpv-b");
+    expect(a).not.toBeNull();
+    expect(b).not.toBeNull();
+    expect(b?.white.accuracy).toBeCloseTo(a?.white.accuracy ?? -1, 9);
+    expect(b?.black.accuracy).toBeCloseTo(a?.black.accuracy ?? -1, 9);
+    expect(b?.white.acl).toBeCloseTo(a?.white.acl ?? -1, 9);
+    expect(b?.white.blunders).toBe(a?.white.blunders ?? -1);
+  });
 });
 
 describe("computeAndCacheMetrics", () => {

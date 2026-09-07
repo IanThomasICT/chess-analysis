@@ -194,6 +194,35 @@ describe("migration runner", () => {
     }).toThrow();
   });
 
+  test("migration #11 adds is_standard column and creates game_metrics_ext", () => {
+    const db = makeDb();
+    db.run(`CREATE TABLE IF NOT EXISTS games (id TEXT PRIMARY KEY, username TEXT NOT NULL, pgn TEXT NOT NULL, white TEXT, black TEXT, result TEXT, time_class TEXT, end_time INTEGER, created_at INTEGER DEFAULT (unixepoch()))`);
+    db.run(`CREATE TABLE IF NOT EXISTS analysis (game_id TEXT NOT NULL, move_index INTEGER NOT NULL, fen TEXT NOT NULL, move_san TEXT, score_cp INTEGER, score_mate INTEGER, best_move TEXT, depth INTEGER, PRIMARY KEY (game_id, move_index), FOREIGN KEY (game_id) REFERENCES games(id))`);
+    runMigrations(db);
+
+    const tables = db
+      .prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='game_metrics_ext'`)
+      .all() as Array<{ name: string }>;
+    expect(tables).toHaveLength(1);
+
+    const cols = db
+      .prepare(`SELECT name FROM pragma_table_info('games') WHERE name = 'is_standard'`)
+      .all() as Array<{ name: string }>;
+    expect(cols).toHaveLength(1);
+  });
+
+  test("migration #12 adds metrics_version column to game_metrics", () => {
+    const db = makeDb();
+    db.run(`CREATE TABLE IF NOT EXISTS games (id TEXT PRIMARY KEY, username TEXT NOT NULL, pgn TEXT NOT NULL, white TEXT, black TEXT, result TEXT, time_class TEXT, end_time INTEGER, created_at INTEGER DEFAULT (unixepoch()))`);
+    db.run(`CREATE TABLE IF NOT EXISTS analysis (game_id TEXT NOT NULL, move_index INTEGER NOT NULL, fen TEXT NOT NULL, move_san TEXT, score_cp INTEGER, score_mate INTEGER, best_move TEXT, depth INTEGER, PRIMARY KEY (game_id, move_index), FOREIGN KEY (game_id) REFERENCES games(id))`);
+    runMigrations(db);
+
+    const cols = db
+      .prepare(`SELECT name FROM pragma_table_info('game_metrics') WHERE name = 'metrics_version'`)
+      .all() as Array<{ name: string }>;
+    expect(cols).toHaveLength(1);
+  });
+
   test("migration #7 preserves existing analysis rows with multipv_rank=1", () => {
     // Bootstrap old schema (pre-migration #7), apply migrations 1-6, insert rows,
     // then apply migration #7 and verify rows survive with multipv_rank=1.

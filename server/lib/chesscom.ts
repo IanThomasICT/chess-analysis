@@ -21,7 +21,7 @@ export interface ChessComGame {
   };
 }
 
-export async function fetchArchives(username: string): Promise<string[]> {
+async function fetchArchives(username: string): Promise<string[]> {
   const r = await fetch(
     `https://api.chess.com/pub/player/${username}/games/archives`,
     { headers: { "User-Agent": USER_AGENT } },
@@ -35,7 +35,7 @@ export async function fetchArchives(username: string): Promise<string[]> {
   return archives;
 }
 
-export async function fetchMonthGames(
+async function fetchMonthGames(
   archiveUrl: string,
 ): Promise<ChessComGame[]> {
   // Validate the URL points to Chess.com API to prevent SSRF
